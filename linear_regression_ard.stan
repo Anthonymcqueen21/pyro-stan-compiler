@@ -1,0 +1,33 @@
+data{
+    int<lower=0>N;//numberofdataitems
+    int<lower=0>D;//dimensionofinputfeatures
+    matrix[N,D]x;//inputmatrix
+    vector[N]y;//outputvector
+    //hyperparametersforGammapriors
+    real<lower=0>a0;
+    real<lower=0>b0;
+    real<lower=0>c0;
+    real<lower=0>d0;
+}
+parameters{
+    vector[D]w;//weights(coefficients)vector
+    real<lower=0>sigma2;//variance
+    vector<lower=0>[D]alpha;//hyper-parametersonweights
+}
+transformedparameters{
+    realsigma;//standarddeviation
+    vector[D]one_over_sqrt_alpha;//numericalstability
+    sigma<-sqrt(sigma2);
+    for(iin1:D){
+        one_over_sqrt_alpha[i]<-1/sqrt(alpha[i]);
+    }
+}
+model{
+    //alpha:hyper-prioronweights
+    alpha~gamma(c0,d0);
+    //sigma2:prioronvariance
+    sigma2~inv_gamma(a0,b0);
+    //w:prioronweights
+    w~normal(0,sigma*one_over_sqrt_alpha);
+    //y:likelihood
+    y
