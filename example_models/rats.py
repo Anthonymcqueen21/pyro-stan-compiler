@@ -1,9 +1,14 @@
 import torch
 from torch.autograd import Variable
 import pyro
+from pyro.infer import SVI
+from pyro.optim import Adam
+from torch.nn import Softplus
 import pyro.distributions as dist
 from pyro.util import ng_ones, ng_zeros
 import pandas
+
+sp = Softplus()
 
 # TODO: load data from csv
 x = Variable(torch.Tensor(
@@ -54,28 +59,63 @@ def ng(*args, **kwargs):
 
 def model(x_minus_xbar):
     # sampled params
-    mu_alpha = pyro.sample("mu_alpha", dist.normal, ng_zeros(N, 1), ng(100, N, 1))
-    mu_beta = pyro.sample("mu_beta", dist.normal, ng_zeros(N, 1), ng(100, N, 1))
-    sigmasq_y = pyro.sample("sigmasq_y", dist.halfcauchy, ng(1e-3, N, T), ng(1e-3, N, T))
-    sigmasq_alpha = pyro.sample("sigmasq_alpha", dist.halfcauchy, ng(1e-3, N, 1), ng(1e-3, N, 1))
-    sigmasq_beta = pyro.sample("sigmasq_beta", dist.halfcauchy, ng(1e-3, N, 1), ng(1e-3, N, 1))
+    mu_alpha = pyro.sample("mu_alpha", dist.normal, ng_zeros(N, 1), ng(10, N, 1))
+    mu_beta = pyro.sample("mu_beta", dist.normal, ng_zeros(N, 1), ng(10, N, 1))
+    sigma_y = pyro.sample("sigmasq_y", dist.halfcauchy, ng(1e-3, N, T), ng(1e-3, N, T))
+    sigma_alpha = pyro.sample("sigmasq_alpha", dist.halfcauchy, ng(1e-3, N, 1), ng(1e-3, N, 1))
+    sigma_beta = pyro.sample("sigmasq_beta", dist.halfcauchy, ng(1e-3, N, 1), ng(1e-3, N, 1))
 
     # transformed parameters
-    sigma_y = torch.sqrt(sigmasq_y)
-    sigma_alpha = torch.sqrt(sigmasq_alpha)
-    sigma_beta = torch.sqrt(sigmasq_beta)
+    # dont need this because pyro dists take std dev not variance
+#     sigma_y = torch.sqrt(sigmasq_y)
+#     sigma_alpha = torch.sqrt(sigmasq_alpha)
+#     sigma_beta = torch.sqrt(sigmasq_beta)
 
-    alpha = pyro.sample("alpha", dist.halfcauchy, mu_alpha, sigma_alpha)
-    beta = pyro.sample("beta", dist.halfcauchy, mu_beta, sigma_beta)
+    alpha = pyro.sample("alpha", dist.normal, mu_alpha, sigma_alpha)
+    beta = pyro.sample("beta", dist.normal, mu_beta, sigma_beta)
     # observe
     pred = torch.addmm(beta.expand(N, T), alpha, x_minus_xbar.t())
     pyro.sample("obs", dist.normal, pred, sigma_y, obs=x)
 
 # generate guide from model
 def guide(x):
-    pass
+    # declare params
+    mumu_alpha = pyro.param("mumu_alpha", Variable(torch.randn(N, 1), requires_grad=True))
+    sigmamu_alpha = pyro.param("sigmamu_alpha", Variable(torch.rand(N, 1), requires_grad=True))
+    mumu_beta = pyro.param("mumu_beta", Variable(torch.randn(N, 1), requires_grad=True))
+    sigmamu_beta = pyro.param("sigmamu_beta", Variable(torch.rand(N, 1), requires_grad=True))
+    musigma_y = pyro.param("musigma_y", Variable(torch.rand(N, T), requires_grad=True))
+    sigmasigma_y = pyro.param("sigmasigma_y", Variable(torch.rand(N, T), requires_grad=True))
+    musigma_alpha = pyro.param("musigma_alpha", Variable(torch.rand(N, 1), requires_grad=True))
+    sigmasigma_alpha = pyro.param("sigmasigma_alpha", Variable(torch.rand(N, 1), requires_grad=True))
+    musigma_beta = pyro.param("musigma_beta", Variable(torch.rand(N, 1), requires_grad=True))
+    sigmasigma_beta = pyro.param("sigmasigma_beta", Variable(torch.rand(N, 1), requires_grad=True))
+
+    # sampled params
+    mu_alpha = pyro.sample("mu_alpha", dist.normal, mumu_alpha, sp(sigmamu_alpha))
+    mu_beta = pyro.sample("mu_beta", dist.normal, mumu_beta, sp(sigmamu_beta))
+    sigma_y = pyro.sample("sigmasq_y", dist.halfcauchy, sp(musigma_y), sp(sigmasigma_y))
+    sigma_alpha = pyro.sample("sigmasq_alpha", dist.halfcauchy, sp(musigma_alpha), sp(sigmasigma_alpha))
+    sigma_beta = pyro.sample("sigmasq_beta", dist.halfcauchy, sp(musigma_beta), sp(sigmasigma_beta))
+
+    # transformed parameters
+    # see model() comments
+#     sigma_y = torch.sqrt(sigmasq_y)
+#     sigma_alpha = torch.sqrt(sigmasq_alpha)
+#     sigma_beta = torch.sqrt(sigmasq_beta)
+
+    alpha = pyro.sample("alpha", dist.halfcauchy, mu_alpha, sp(sigma_alpha))
+    beta = pyro.sample("beta", dist.halfcauchy, mu_beta, sp(sigma_beta))
 
 # TODO: training loop
 # transformed data
 x_minus_xbar = x - xbar
-model(x_minus_xbar[0].unsqueeze(1))
+epochs = 10
+for i in range(epochs):
+    loss = 0
+    for j in range(30):
+        data = x_minus_xbar[j].unsqueeze(1)
+        svi = SVI(model, guide, Adam({"lr": 0.01}), "ELBO")
+	loss += svi.step(data) / N
+    print("loss = {}").format(loss)
+
