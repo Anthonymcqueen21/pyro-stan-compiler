@@ -1,4 +1,3 @@
-47 lines (42 sloc)  1.08 KB
 # http://www.mrc-bsu.cam.ac.uk/bugs/winbugs/Vol1.pdf
 # Page 3: Rats
 data {
