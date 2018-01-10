@@ -11,7 +11,7 @@ import pandas
 sp = Softplus()
 
 # TODO: load data from csv
-x = Variable(torch.Tensor(
+y = Variable(torch.Tensor(
     [
       [151,199,246,283,320],
       [145,199,249,293,354],
@@ -49,7 +49,9 @@ x = Variable(torch.Tensor(
 # init
 N = 30
 T = 5
+x = Variable(torch.Tensor([8.0, 15.0, 22.0, 29.0, 36.0]))
 xbar = 22
+x_minus_xbar = x - xbar
 
 # ng(value, dim0, dim1)
 def ng(*args, **kwargs):
@@ -57,7 +59,7 @@ def ng(*args, **kwargs):
 	raise ValueError("args msut be = 3")
     return Variable(torch.Tensor(args[1], args[2]).fill_(args[0]))
 
-def model(x_minus_xbar):
+def model(y):
     # sampled params
     mu_alpha = pyro.sample("mu_alpha", dist.normal, ng_zeros(N, 1), ng(10, N, 1))
     mu_beta = pyro.sample("mu_beta", dist.normal, ng_zeros(N, 1), ng(10, N, 1))
@@ -74,8 +76,8 @@ def model(x_minus_xbar):
     alpha = pyro.sample("alpha", dist.normal, mu_alpha, sigma_alpha)
     beta = pyro.sample("beta", dist.normal, mu_beta, sigma_beta)
     # observe
-    pred = torch.addmm(beta.expand(N, T), alpha, x_minus_xbar.t())
-    pyro.sample("obs", dist.normal, pred, sigma_y, obs=x)
+    pred = torch.addmm(beta.expand(N, T), alpha, x_minus_xbar.unsqueeze(1).t())
+    pyro.sample("obs", dist.normal, pred, sigma_y, obs=y)
 
 # generate guide from model
 def guide(x):
@@ -109,13 +111,9 @@ def guide(x):
 
 # TODO: training loop
 # transformed data
-x_minus_xbar = x - xbar
-epochs = 10
+epochs = 100
 for i in range(epochs):
-    loss = 0
-    for j in range(30):
-        data = x_minus_xbar[j].unsqueeze(1)
-        svi = SVI(model, guide, Adam({"lr": 0.01}), "ELBO")
-	loss += svi.step(data) / N
+    svi = SVI(model, guide, Adam({"lr": 0.001}), "ELBO")
+    loss = svi.step(y)
     print("loss = {}").format(loss)
 
