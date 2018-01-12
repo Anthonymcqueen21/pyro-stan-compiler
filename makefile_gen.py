@@ -38,17 +38,17 @@ print("\nall: %sstan2pyro" % BIN)
 print("\nclean:")
 print("\t-rm -rf %s %s" % (BIN,BUILD)) 
 
-print("\n%sstan2pyro: %s build_dir" % (BIN, " ".join(names)))
+print("\n%sstan2pyro: %s %s" % (BIN, " ".join(names),BUILD))
 print("\t$(CMD) -o %sstan2pyro %s*.o" % (BIN,BUILD))
 
 print("\nexe: %sstan2pyro.o" % BUILD) 
 print("\t$(CMD) -o %sstan2pyro %s*.o" % (BIN, BUILD)) 
 
 for i in range(len(names)):
-    print("\n%s: %s build_dir" % (names[i], sources[i]))
+    print("\n%s: %s %s" % (names[i], sources[i], BUILD))
     print("\t$(CMD) -c -o %s %s" % ((names[i], sources[i])))
     
-print("\nbuild_dir:")
+print("\n%s:"% BUILD)
 print("\tmkdir -p %s" % BUILD)
 print("\tmkdir -p %s" % BIN)
 
