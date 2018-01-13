@@ -30,7 +30,7 @@ BIN = "stan2pyro/bin/"
 
 
 
-print("CMD=g++ %s -D FUSION_MAX_VECTOR_SIZE=12 -DBOOST_RESULT_OF_USE_TR1 -DBOOST_NO_DECLTYPE -DBOOST_DISABLE_ASSERTS -Os -ftemplate-depth-256 -Wno-unused-function -Wno-uninitialized -I stan/src -I stan/lib/stan_math/ -I stan/lib/stan_math/lib/eigen_3.3.3 -I stan/lib/stan_math/lib/boost_1.65.1 -I stan/lib/stan_math/lib/cvodes_2.9.0/include\n" % (DBG_OPTS))
+print("CMD=g++ %s -D FUSION_MAX_VECTOR_SIZE=12 -DBOOST_RESULT_OF_USE_TR1 -DBOOST_NO_DECLTYPE -DBOOST_DISABLE_ASSERTS -Os -ftemplate-depth-256 -Wno-unused-function -Wno-uninitialized -I stan/src -I stan/lib/stan_math/ -I stan/lib/stan_math/lib/eigen_3.3.3 -I stan/lib/stan_math/lib/boost_1.65.1 -I stan/lib/stan_math/lib/cvodes_2.9.0/include -I stan2pyro\n" % (DBG_OPTS))
 
 
 print("\nall: %sstan2pyro" % BIN)
@@ -45,10 +45,14 @@ print("\nexe: %sstan2pyro.o" % BUILD)
 print("\t$(CMD) -o %sstan2pyro %s*.o" % (BIN, BUILD)) 
 
 for i in range(len(names)):
-    print("\n%s: %s %s" % (names[i], sources[i], BUILD))
+    print("\n%s: %s" % (names[i], sources[i]))
+    print("\tmkdir -p %s" % BUILD)
+    print("\tmkdir -p %s" % BIN)
     print("\t$(CMD) -c -o %s %s" % ((names[i], sources[i])))
+  
     
+"""
 print("\n%s:"% BUILD)
 print("\tmkdir -p %s" % BUILD)
 print("\tmkdir -p %s" % BIN)
-
+"""
