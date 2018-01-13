@@ -99,7 +99,7 @@ namespace stan {
 
       void operator()(const variable& v) const { 
         o_ << v.name_; 
-        //<< "/*"<< v.type_ <<"*/"; 
+        o_ << "/*"<< v.type_ <<"*/"; 
       }
 
       void operator()(int n) const {   // NOLINT

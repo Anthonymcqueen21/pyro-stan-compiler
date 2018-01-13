@@ -29,3 +29,7 @@ def load_data(model_name):
     data = {}
     return data
 
+
+def do_analysis(model_name): 
+    # TODO: implement model specific 
+    pass
