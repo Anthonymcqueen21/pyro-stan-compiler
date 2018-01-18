@@ -22,12 +22,14 @@ data = load_data(model_name)
 
 # model definition
 def model(%%%model_args%%%):
+    # parameter initialization and registering
+    %%%init_params_model%%%
     %%%model_def%%%
 
 ## guide synthesis
 def guide(%%%model_args%%%):
     # parameter initialization and registering
-    %%%init_params%%%
+    %%%init_params_guide%%%
     # generate mean-field guide with pyro.sample statements
     # assume: normal distribution for continuous, categorical for discrete
     %%%mean_field_guide%%%

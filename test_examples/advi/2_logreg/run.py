@@ -2,6 +2,7 @@ from pdb import set_trace as bb
 import pystan
 import json
 import os
+from utils import load_data
 
 def run_stan_advi(model_fname, data_fname, iters=1000):
     data = load_data(data_fname)
@@ -23,16 +24,7 @@ def run_stan_advi(model_fname, data_fname, iters=1000):
     bb()
     
     
-def load_data(fname):
-    with open(fname,"r") as f:
-        rdata = json.load(f)
-    assert len(rdata) == 2
-    data = {}
-    n = len(rdata[0])
-    for i in range(n):
-        key = rdata[0][i]
-        data[key] = rdata[1][i]
-    return data
+
 
 if not os.path.exists("model.data.json"):
     os.system("Rscript transform.R")
