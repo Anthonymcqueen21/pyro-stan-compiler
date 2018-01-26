@@ -3,8 +3,23 @@
 import torch
 from torch.autograd import Variable
 import numpy as np
+from pdb import set_trace as bb
 import json
 import collections
+import pyro
+import pyro.distributions as dist
+
+class SmoothedUniform(dist.Uniform):
+    def __init__(self, *args, **kwargs):
+        super(SmoothedUniform, self).__init__(*args, **kwargs)
+
+    def batch_log_pdf(self, x):
+        if len(x.size()) == 1 and x.size(0) == 1:
+            v = x.data[0]
+            if v < self.a.data[0] or v > self.b.data[0]:
+                return Variable(torch.ones(1) * -100.)
+
+        return super(SmoothedUniform, self).batch_log_pdf(x)
 
 def to_variable(x, requires_grad = False):
     if isinstance(x, collections.Iterable):

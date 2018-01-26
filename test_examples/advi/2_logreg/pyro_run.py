@@ -7,135 +7,145 @@ import pyro
 import pyro.distributions as dist
 from pyro.infer import SVI
 from pyro.optim import Adam
-from utils import to_variable, load_data, do_analysis, fudge
+from utils import to_variable, load_data, do_analysis, fudge, SmoothedUniform
 from pdb import set_trace as bb
 
 # hyperparameters - TODO: make them arg parsed with defaults
 # assuming SVI
 num_epochs = 100
-lr = 0.0001
+lr = 0.001
+B = 200 # batching size
 
 model_name = "2_logreg"
 
-# load data
-data = load_data("model.data.json")
+if __name__ == "__main__":
+    # load data
+    data = load_data("model.data.json")
 
 def constrain(var,low,high):
     scaled_var = fudge((1.0/(torch.exp(-var) +1)))
     return low + (scaled_var * (high-low))
 
+
+variables = ["a", "b", "c", "d", "e"]
+n_keys = ["n_age", "n_edu", "n_age_edu", "n_state", "n_region_full"]
+
+def compute_y_hat(beta, rvs, B, black, female, v_prev_full, age, edu, age_edu, state, region_full):
+    y_hat = beta[0].expand(B) + beta[1].expand(B) * black
+    y_hat = y_hat + beta[2].expand(B) * female
+    y_hat = y_hat + beta[4].expand(B) * female * black
+    y_hat = y_hat + beta[3] * v_prev_full
+
+    y_hat = y_hat + rvs["a"].index_select(0, age.long() - 1)
+    y_hat = y_hat + rvs["b"].index_select(0, edu.long() - 1)
+    y_hat = y_hat + rvs["c"].index_select(0, age_edu.long() - 1)
+    y_hat = y_hat + rvs["d"].index_select(0, state.long() - 1)
+    y_hat = y_hat + rvs["e"].index_select(0, region_full.long() - 1)
+    return y_hat
+
+MAX_NUM = 100000
 # model definition
-def model(y):
+def model(B,black, female, v_prev_full, age, edu, age_edu, state, region_full, y):
+
     # sample top level params
-    sigma_a = constrain(pyro.sample("sigma_a", dist.normal, to_variable(0), to_variable(1)), 0, 10)     
-    sigma_b = constrain(pyro.sample("sigma_b", dist.normal, to_variable(0), to_variable(1)), 0, 10) 
-    sigma_c = constrain(pyro.sample("sigma_c", dist.normal, to_variable(0), to_variable(1)), 0, 10) 
-    sigma_d = constrain(pyro.sample("sigma_d", dist.normal, to_variable(0), to_variable(1)), 0, 10) 
-    sigma_e = constrain(pyro.sample("sigma_e", dist.normal, to_variable(0), to_variable(1)), 0, 10) 
+    sigmas, mus, rvs = {}, {}, {}
+    for i in range(len(variables)):
+        v = variables[i]
+        sigmas[v] = pyro.sample("_sigma_%s" % v, SmoothedUniform(to_variable(0), to_variable(100)) )
+        mus[v] = Variable(torch.zeros(data[n_keys[i]]))
+        rvs[v] = pyro.sample(v, dist.normal, mus[v], sigmas[v].expand(data[n_keys[i]]))
     
-    mu_a = Variable(torch.zeros(data['n_age']))
-    mu_b = Variable(torch.zeros(data['n_edu']))
-    mu_c = Variable(torch.zeros(data['n_age_edu']))
-    mu_d = Variable(torch.zeros(data['n_state']))
-    mu_e = Variable(torch.zeros(data['n_region_full']))
-
-    assert sigma_a.data[0] > 0
-    a = pyro.sample("a", dist.normal, mu_a, sigma_a.expand(data['n_age']))
-    b = pyro.sample("b", dist.normal, mu_b, sigma_b.expand(data['n_edu']))
-    c = pyro.sample("c", dist.normal, mu_c, sigma_c.expand(data['n_age_edu']))
-    d = pyro.sample("d", dist.normal, mu_d, sigma_d.expand(data['n_state']))
-    e = pyro.sample("e", dist.normal, mu_e, sigma_e.expand(data['n_region_full']))
-
     beta = pyro.sample("beta", dist.normal, Variable(torch.zeros(5)), Variable(torch.ones(5)) * 100.)
     
-    y_hat =  beta[0].expand(data["N"]) + beta[1].expand(data["N"]) * to_variable(data["black"]) \
-             + beta[2].expand(data["N"]) * to_variable(data["female"]) \
-             + beta[4].expand(data["N"]) * to_variable(data["female"]) * to_variable(data["black"]) \
-             + beta[3] * to_variable(data["v_prev_full"]) + a.index_select(0, to_variable(data["age"]).long() -1) \
-             + b.index_select(0, to_variable(data["edu"]).long()-1) \
-             + c.index_select(0, to_variable(data["age_edu"]).long()-1) \
-             + d.index_select(0, to_variable(data["state"]).long()-1) \
-             + e.index_select(0, to_variable(data["region_full"]).long()-1)
-    #print(y_hat[0:5])     
-    #bb()    
-    pyro.sample("y_hat",dist.Bernoulli(ps=fudge(1.0/( torch.exp(-y_hat) + 1))), obs=y)
+    y_hat =  compute_y_hat(beta, rvs, B, black, female, v_prev_full, age, edu, age_edu, state, region_full)
 
+    pyro.sample("y_hat",dist.Bernoulli(ps=fudge(1.0/( torch.exp(-y_hat) + 1))), obs=y)
+    return y_hat
+
+if __name__ == "__main__":
+    params = {}
+    for i in range(len(variables)):
+        v = variables[i]
+        params["_mu_sigma_%s" % v] = Variable(torch.rand(1)*10., requires_grad=True)
+        params["_sigma_sigma_%s" % v] = Variable(torch.rand(1)*5., requires_grad=True)
+    params["mu_beta"] = Variable(torch.randn(5)*2., requires_grad=True)
+    params["sigma_beta"] = Variable(torch.rand(5)*2., requires_grad=True)
 
 ## guide synthesis
-def guide(y):
-    # declare toplevel params
-    mu_sigma_a = pyro.param("mu_sigma_a", Variable(torch.randn(1), requires_grad=True))
-    sigma_sigma_a = pyro.param("sigma_sigma_a", Variable(torch.rand(1), requires_grad=True))
-    sigma_sigma_a = constrain(sigma_sigma_a, 0, 10)
-    
-    mu_sigma_b = pyro.param("mu_sigma_b", Variable(torch.randn(1), requires_grad=True))
-    sigma_sigma_b = pyro.param("sigma_sigma_b", Variable(torch.rand(1), requires_grad=True))
-    sigma_sigma_b = constrain(sigma_sigma_b, 0, 10)
-    
-    mu_sigma_c = pyro.param("mu_sigma_c", Variable(torch.randn(1), requires_grad=True))
-    sigma_sigma_c = pyro.param("sigma_sigma_c", Variable(torch.rand(1), requires_grad=True))
-    sigma_sigma_c = constrain(sigma_sigma_c, 0, 10)
-    
-    mu_sigma_d = pyro.param("mu_sigma_d", Variable(torch.randn(1), requires_grad=True))
-    sigma_sigma_d = pyro.param("sigma_sigma_d", Variable(torch.rand(1), requires_grad=True))
-    sigma_sigma_d = constrain(sigma_sigma_d, 0, 10)
-    
-    
-    mu_sigma_e = pyro.param("mu_sigma_e", Variable(torch.randn(1), requires_grad=True))
-    sigma_sigma_e = pyro.param("sigma_sigma_e", Variable(torch.rand(1), requires_grad=True))
-    sigma_sigma_e = constrain(sigma_sigma_e, 0, 10)
-    
+def guide(B, black, female, v_prev_full, age, edu, age_edu, state, region_full, y=None):
 
     # sample top level params
-    sigma_a = constrain(pyro.sample("sigma_a", dist.normal, mu_sigma_a, sigma_sigma_a), 0, 10)
-    sigma_b = constrain(pyro.sample("sigma_b", dist.normal, mu_sigma_b, sigma_sigma_b), 0, 10)
-    sigma_c = constrain(pyro.sample("sigma_c", dist.normal, mu_sigma_c, sigma_sigma_c), 0, 10)
-    sigma_d = constrain(pyro.sample("sigma_d", dist.normal, mu_sigma_d, sigma_sigma_d), 0, 10)
-    sigma_e = constrain(pyro.sample("sigma_e", dist.normal, mu_sigma_e, sigma_sigma_e), 0, 10)
-
-    
-
-    # decalre domain level params
-    mu_a = pyro.param("mu_a", Variable(torch.randn(data['n_age']), requires_grad=True))
-    mu_b = pyro.param("mu_b", Variable(torch.randn(data['n_edu']), requires_grad=True))
-    mu_c = pyro.param("mu_c", Variable(torch.randn(data['n_age_edu']), requires_grad=True))
-    mu_d = pyro.param("mu_d", Variable(torch.randn(data['n_state']), requires_grad=True))
-    mu_e = pyro.param("mu_e", Variable(torch.randn(data['n_region_full']), requires_grad=True))
-
-    # sample domain level params 
-    a = pyro.sample("a", dist.normal, mu_a, sigma_a.expand(data['n_age']))
-    b = pyro.sample("b", dist.normal, mu_b, sigma_b.expand(data['n_edu']))
-    c = pyro.sample("c", dist.normal, mu_c, sigma_c.expand(data['n_age_edu']))
-    d = pyro.sample("d", dist.normal, mu_d, sigma_d.expand(data['n_state']))
-    e = pyro.sample("e", dist.normal, mu_e, sigma_e.expand(data['n_region_full']))
-    
+    mu_sigmas, sigma_sigmas, sigmas, mus, rvs = {}, {}, {}, {}, {}
+    for i in range(len(variables)):
+        v = variables[i]
+        mu_sigmas[v] = pyro.param("_mu_sigma_%s" % v, params["_mu_sigma_%s" % v])
+        sigma_sigmas[v] = pyro.param("_sigma_sigma_%s" % v,params["_sigma_sigma_%s" % v] )
+        #sigma_sigmas[v] = sigma_sigmas[v] * sigma_sigmas[v]
+        
+        sigmas[v] = pyro.sample("_sigma_%s" % v, dist.lognormal, mu_sigmas[v] ,sigma_sigmas[v])
+        #sigmas[v] = torch.abs(sigmas[v])
+        mus[v] = Variable(torch.randn(data[n_keys[i]]), requires_grad=True)
+        rvs[v] = pyro.sample(v, dist.normal, mus[v], sigmas[v].expand(data[n_keys[i]]))
     
     # declare beta params
-    mu_beta = pyro.param("mu_beta", Variable(torch.randn(5), requires_grad=True))
-    sigma_beta = pyro.param("sigma_beta", Variable(torch.rand(5), requires_grad=True))
-
+    mu_beta = pyro.param("mu_beta", params["mu_beta"])
+    sigma_beta = pyro.param("sigma_beta", params["sigma_beta"])
+    sigma_beta = torch.abs(sigma_beta)
+    
     beta = pyro.sample("beta", dist.normal, mu_beta, sigma_beta)
+    y_hat = compute_y_hat(beta, rvs, B, black, female, v_prev_full, age, edu, age_edu, state, region_full)
+    return y_hat
+def get_data_indices(d, ixs):
+    r = []
+    for i in ixs:
+        r.append(d[i])
+    return r
+   
+data_keys = ["black", "female", "v_prev_full", "age", "edu", "age_edu", "state", "region_full", "y"]
+ 
+if __name__ == "__main__":
+    torch.manual_seed(0)    
+    # run inference
+    # choose optimizer? start with Adam
+    # setup the optimizer
+    adam_params = {"lr": lr}
+    optimizer = Adam(adam_params)
+
+    loss = SVI(model, guide, optimizer, loss="ELBO")
+    val = 0
     
 
-torch.manual_seed(0)    
-# run inference
-# choose optimizer? start with Adam
-# setup the optimizer
-adam_params = {"lr": lr}
-optimizer = Adam(adam_params)
+    n_train = 10000
+    n_test = data["N"] - n_train
+    for epoch in range(num_epochs):
+        #TODO: batching if the data is large
+        indices = range(n_train)
+        np.random.shuffle(indices)
 
-loss = SVI(model, guide, optimizer, loss="ELBO")
-val = 0
-for epoch in range(num_epochs):
-    #TODO: batching if the data is large
-    val = loss.step(to_variable(data['y']))
-    print('epoch loss: {}'.format(val))
+        num_batches = 10000/ B
+        val = 0
+        for j in range(num_batches):
+             args = list(map(lambda k: to_variable(get_data_indices(data[k],indices[j*B:j*B+B])), data_keys))
+             val += loss.step(B, *args)
+        print('epoch %d loss: %0.5f' % (epoch, val))
 
-# generate code for printing final params
-bb()
-# %%%final_params_print%%%
+    args = list(map(lambda k: to_variable(data[k][10000:]), data_keys))
+    B = len(args[0])
+    p = Variable(torch.zeros(B))
+    L = 100000
+    for k in range(L):
+        y_hat = guide(B, *args)
+        p = p + 1.0/( torch.exp(-y_hat) + 1)
 
-# call problem-specific analysis function
-#do_analysis(model_name)
+    p = ((p / (1. * L)) > 0.5)
+    y = args[-1].byte()
+    acc =  sum(args[-1].byte() == p).data[0] / (1. * B)
+
+    print("accuracy = %0.5f percent" % (acc*100.))
+    bb()
+    # %%%final_params_print%%%
+
+    # call problem-specific analysis function
+    #do_analysis(model_name)
 
 
