@@ -1,5 +1,5 @@
 from utils import to_variable, load_data
-from pyro_model import model, variables
+from pyro_model import model, variables, n_keys, hardcoded_sigmas
 import numpy as np
 import pystan
 import pickle
@@ -9,50 +9,41 @@ data = load_data("../model.data.json")
 
 from pdb import set_trace as bb
 
-NS=10000 #num samples
+NS=100000 #num samples
 
 
 vars = ['a', 'b', 'c', 'd', 'e', 'beta', 'sigma_a', 'sigma_b', 'sigma_c', 'sigma_d', 'sigma_e', 'y']
+dims = list(map(lambda i: data[n_keys[i]], range(len(n_keys)))) + [5] + [1]*len(n_keys) + [data["N"]]
+print(dims, sum(dims))
+
 SAMPLES_FILE = 'samples_%d.pkl' %NS
-
-def save_samples(la):
-    with open("samples.pkl","wb") as f:
-        pickle.dump(la, f)
-
-def load_samples():
-    with open(SAMPLES_FILE, 'rb') as f:
-        samples = pickle.load(f)
-    return samples
-
-def exists_samples():
-    return os.path.exists(SAMPLES_FILE)
-
 MODEL_FILE = "model.pkl"
-def save_model(sm):
-    # save it to the file 'model.pkl' for later use
-    with open(MODEL_FILE, 'wb') as f:
-        pickle.dump(sm, f)
+MEANS_FILE = "means_%d.pkl" %NS
 
-def load_model():
-    # save it to the file 'model.pkl' for later use
-    with open(MODEL_FILE, 'rb') as f:
-        sm = pickle.load(f)
-    return sm
+def save_p(obj, fname):
+    with open(fname, "wb") as f:
+        pickle.dump(obj, f)
 
-def exists_model():
-    return os.path.exists(MODEL_FILE)
+def load_p(fname):
+    with open(fname, 'rb') as f:
+        obj = pickle.load(f)
+    return obj
+
+def exists_p(fname):
+    return os.path.exists(fname)
 
 def run_stan():
-    with open("model_sampler.stan","r") as f:
-        code = f.read()
-    if exists_samples():
-        arrays = load_samples()
+    if exists_p(MEANS_FILE):
+        means = load_p(MEANS_FILE)
     else:
-        if exists_model():
-            sm = load_model()
+        if exists_p(MODEL_FILE):
+            sm = load_p(MODEL_FILE)
+            print("Loaded Stan Model")
         else:
+            with open("model_sampler.stan", "r") as f:
+                code = f.read()
             sm = pystan.StanModel(model_code=code)
-            save_model(sm)
+            save_p(sm, MODEL_FILE)
 
         fit = sm.sampling(data=data,iter=NS,warmup=0,chains=1, algorithm="Fixed_param")
         la=fit.extract(permuted=True)
@@ -60,18 +51,17 @@ def run_stan():
         for v in vars:
             arr_v = np.array(la[v])
             arrays[v] = arr_v
-        save_samples(arrays)
-
-    means = []
-    for v in vars:
-        arr_v = arrays[v] #np.array(la[v])
-        assert arr_v.shape[0] == NS
-        v_means = np.mean(arr_v,axis=0)
-        if v_means.shape == ():
-            v_means = np.array([float(v_means)])
-        assert v_means.shape[0] >= 1
-        means.append(v_means)
-    means = np.concatenate(means)
+        means = []
+        for v in vars:
+            arr_v = arrays[v] #np.array(la[v])
+            assert arr_v.shape[0] == NS, "arrv.shape[0] != NS"
+            v_means = np.mean(arr_v,axis=0)
+            if v_means.shape == ():
+                v_means = np.array([float(v_means)])
+            assert v_means.shape[0] >= 1, "v_means.shape[0] < 1"
+            means.append(v_means)
+        means = np.concatenate(means)
+        save_p(means, MEANS_FILE)
     return means
 
 
@@ -93,18 +83,41 @@ def run_pyro():
     means = np.mean(arr, axis=0)
     return means
 
-p_means = run_pyro()
+
+
+print("Running Stan")
 s_means = run_stan()
 
-assert p_means.shape == s_means.shape
+P_MEANS_FILE ="pyro_means_%d.pkl" %NS
+if exists_p(P_MEANS_FILE):
+    p_means = load_p(P_MEANS_FILE)
+else:
+    print("Running Pyro")
+    p_means = run_pyro()
+    save_p(p_means, P_MEANS_FILE)
 
-EPS=0.1
-def check_eq(i,a,b):
-    if a == 0.:
-        assert abs(b) < EPS, "issue with index=%d p=%0.5f s=%0.5f" % (i,a,b)
-    else:
-        assert abs(a-b)/abs(a) < EPS, "issue with index=%d p=%0.5f s=%0.5f" % (i,a,b)
 
-for i in range(len(p_means)):
-    check_eq(i, p_means[i], s_means[i])
+assert p_means.shape == s_means.shape, "p/m means shape mismatch"
 
+EPS=0.01
+def check_eq(i,a,b, e=EPS):
+    assert abs(a-b) < e, "issue with index=%d p=%0.5f s=%0.5f" % (i,a,b)
+
+assert sum(dims) == len(p_means), "sum sims != len(p_means)"
+
+
+curr_var_ix = 0
+curr_sum_dims = dims[0]
+v = vars[curr_var_ix]
+i = 0
+while i < len(p_means):
+    if i >= curr_sum_dims:
+        curr_var_ix +=1
+        curr_sum_dims += dims[curr_var_ix]
+    v = vars[curr_var_ix]
+    print ("checking %s.%d" % (v, i - curr_sum_dims + dims[curr_var_ix]))
+
+    #for i in range(len(p_means)):
+    check_eq(i, p_means[i], s_means[i],
+             e=(hardcoded_sigmas[v]/10. if (v in variables) else (2.5 if v == "beta" else EPS)))
+    i+=1
