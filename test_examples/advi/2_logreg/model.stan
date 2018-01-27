@@ -13,39 +13,26 @@ data{
     int<lower=0,upper=n_region_full> region_full[N];
     int<lower=0,upper=n_state> state[N];
     vector[N]v_prev_full;
+    int<lower=0,upper=1> y[N];
 }
 parameters{
-}
-model{
-}
-generated quantities {
     vector[n_age]a;
     vector[n_edu]b;
     vector[n_age_edu]c;
     vector[n_state]d;
     vector[n_region_full]e;
     vector[5]beta;
-    real<lower=0,upper=100> sigma_a=20;
-    real<lower=0,upper=100> sigma_b=40;
-    real<lower=0,upper=100> sigma_c=60;
-    real<lower=0,upper=100> sigma_d=80;
-    real<lower=0,upper=100> sigma_e=100;
+    real<lower=0,upper=100> sigma_a;
+    real<lower=0,upper=100> sigma_b;
+    real<lower=0,upper=100> sigma_c;
+    real<lower=0,upper=100> sigma_d;
+    real<lower=0,upper=100> sigma_e;
+}
+transformedparameters{
     vector[N]y_hat;
-    int<lower=0,upper=1> y[N];
-    for(i in 1:n_age)
-        a[i]=normal_rng(0,sigma_a);
-    for(i in 1:n_edu)
-        b[i]=normal_rng(0,sigma_b);
-    for(i in 1:n_age_edu)
-        c[i]=normal_rng(0,sigma_c);
-    for(i in 1:n_state)
-        d[i]=normal_rng(0,sigma_d);
-    for(i in 1:n_region_full)
-        e[i]=normal_rng(0,sigma_e);
-    for(i in 1:5)
-        beta[i]=normal_rng(0,100);
-    for(i in 1:N){
-        y_hat[i]=  beta[1]
+
+    for(i in 1:N)
+        y_hat[i]<-  beta[1]
                     +beta[2]*black[i]
                     +beta[3]*female[i]
                     +beta[5]*female[i]*black[i]
@@ -55,6 +42,13 @@ generated quantities {
                     +c[age_edu[i]]
                     +d[state[i]]
                     +e[region_full[i]];
-        y[i]=bernoulli_logit_rng(y_hat[i]);
-    }
+}
+model{
+    a~normal(0,sigma_a);
+    b~normal(0,sigma_b);
+    c~normal(0,sigma_c);
+    d~normal(0,sigma_d);
+    e~normal(0,sigma_e);
+    beta~normal(0,100);
+    y~bernoulli_logit(y_hat);
 }

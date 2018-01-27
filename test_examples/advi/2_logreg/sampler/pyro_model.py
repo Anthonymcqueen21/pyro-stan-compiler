@@ -6,9 +6,19 @@ import pyro.distributions as dist
 from utils import to_variable, fudge, SmoothedUniform
 from pdb import set_trace as bb
 
+
+inits_sigmas = {
+            "sigma_a" : 20.,
+            "sigma_b": 40.,
+            "sigma_c": 60.,
+            "sigma_d": 80.,
+            "sigma_e": 99.
+        }
+
+
 variables = ["a", "b", "c", "d", "e"]
 n_keys = ["n_age", "n_edu", "n_age_edu", "n_state", "n_region_full"]
-hardcoded_sigmas = {"a": 20., "b": 40., "c": 60., "d": 80., "e":100.}
+hardcoded_sigmas = {v: inits_sigmas["sigma_%s"%v] for v in variables}
 
 def compute_y_hat(beta, rvs, B, black, female, v_prev_full, age, edu, age_edu, state, region_full):
     y_hat = beta[0].expand(B) + beta[1].expand(B) * black
@@ -25,7 +35,7 @@ def compute_y_hat(beta, rvs, B, black, female, v_prev_full, age, edu, age_edu, s
 
 
 # model definition
-def model(B, black, female, v_prev_full, age, edu, age_edu, state, region_full, y, data):
+def model(B, la, black, female, v_prev_full, age, edu, age_edu, state, region_full, y, data):
     # sample top level params
     sigmas, mus, rvs = {}, {}, {}
     for i in range(len(variables)):
@@ -39,5 +49,7 @@ def model(B, black, female, v_prev_full, age, edu, age_edu, state, region_full, 
 
     y_hat = compute_y_hat(beta, rvs, B, black, female, v_prev_full, age, edu, age_edu, state, region_full)
 
-    y = pyro.sample("y_hat", dist.Bernoulli(ps=fudge(1.0 / (torch.exp(-y_hat) + 1))))
+    y = pyro.sample("y", dist.Bernoulli(ps=fudge(1.0 / (torch.exp(-y_hat) + 1))))
     return sigmas, rvs, beta, y
+
+
