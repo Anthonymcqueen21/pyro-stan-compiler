@@ -42,7 +42,7 @@ namespace stan {
 
 
 //TODO: write avisitor struct for statement_ similar to statement_visgen.hpp in /stan/lang/generator/
-void printer(stan::lang::program &p){
+void printer(stan::lang::program &p) {
     std::cout<<"PRINTING PROGRAM"<<std::endl;
     //int N = p.parameter_decl_.size(); //std::vector<var_decl>
     //std::cout<<"PRINTING PROGRAM: "<<N<<std::endl;
@@ -52,8 +52,7 @@ void printer(stan::lang::program &p){
     stan::lang::pyro_statement(p.statement_, 0, std::cout);
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     assert(argc == 2);
     std::string  model_fname = argv[1];
     std::cout<<"model_file_name: "<<model_fname<<std::endl;

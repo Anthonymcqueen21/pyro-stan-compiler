@@ -231,13 +231,30 @@ namespace stan {
         o_ << " = pyro.sample(\"";
         //o_ << "lp_accum__.add(" << prob_fun << "<propto__>(";
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
-        o_<<"\","<<"dist."<<x.dist_.family_;
-        for (size_t i = 0; i < x.dist_.args_.size(); ++i) {
-          o_ << ", ";
+        std::string dist = x.dist_.family_;
+        bool is_logit = false;
+        std::vector<std::string> split;
+        // capitalize first letter of distribution
+        dist[0] = toupper(dist[0]);
+        if (dist.find("logit") != std::string::npos) {
+          // handles bernoulli and categorical logit distributions
+            is_logit = true;
+            std::string token;
+            std::istringstream tokenStream(dist);
+            while (std::getline(tokenStream, token, '_')) {
+                split.push_back(token);
+            }
+            // only works for C++11
+//             boost::split(split, dist, [](char c){return c == '_';});
+        }
+        if (!is_logit) o_<<"\", "<<"dist."<<dist<<"(";
+        else o_<<"\", "<<"dist."<<split[0]<<"(logit=";
+        for (size_t i = 0; i < x.dist_.args_.size(); ++i) {;
+          if (i != 0) o_ << ", ";
           pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
         }
-        o_ << ")" << EOL;
-        
+        o_ << "))" << EOL;
+
       }
 
       void operator()(const increment_log_prob_statement& x) const {
@@ -392,7 +409,7 @@ namespace stan {
         generate_indent(indent, o);
         o << "current_statement_begin__ = " << s.begin_line_ << ";" << EOL;
       }*/
-      
+
       pyro_statement_visgen vis(indent, o);
       boost::apply_visitor(vis, s.statement_);
     }

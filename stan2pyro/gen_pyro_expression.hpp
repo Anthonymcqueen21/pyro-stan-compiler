@@ -43,13 +43,19 @@ namespace stan {
         o_ << "nil";
       }
 
-      void operator()(const int_literal& n) const { o_ << n.val_; }
+      void operator()(const int_literal& n) const {
+          o_ << "to_variable(";
+          o_ << n.val_;
+          o_ << ")";
+      }
 
       void operator()(const double_literal& x) const {
         std::string num_str = boost::lexical_cast<std::string>(x.val_);
+        o_ << "to_variable(";
         o_ << num_str;
         if (num_str.find_first_of("eE.") == std::string::npos)
           o_ << ".0";  // trailing 0 to ensure C++ makes it a double
+        o_ << ")";
       }
 
       void operator()(const array_expr& x) const {
@@ -97,16 +103,21 @@ namespace stan {
         o_ << ")";
       }
 
-      void operator()(const variable& v) const { 
-        o_ << v.name_; 
-        o_ << "/*"<< v.type_ <<"*/"; 
+      void operator()(const variable& v) const {
+        o_ << v.name_;
       }
 
       void operator()(int n) const {   // NOLINT
+        o_ << "to_variable(";
         o_ << static_cast<long>(n);    // NOLINT
+        o_ << ")";
       }
 
-      void operator()(double x) const { o_ << x; }
+      void operator()(double x) const {
+          o_ << "to_variable(";
+          o_ << x;
+          o_ << ")";
+      }
 
       void operator()(const std::string& x) const { o_ << x; }  // identifiers
 
