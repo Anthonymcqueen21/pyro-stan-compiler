@@ -23,6 +23,9 @@ sources = [
     "stan/src/stan/lang/grammars/whitespace_grammar_inst.cpp",
     "stan2pyro/stan2pyro.cpp"
 ]
+import copy
+deps = copy.deepcopy(sources)
+deps[-1] = "stan2pyro/stan2pyro.cpp stan2pyro/gen_pyro_expression.hpp stan2pyro/gen_pyro_statement.hpp"
 BUILD = "stan2pyro/build/"
 names = list(map(lambda x: BUILD + ((x.split("/")[-1]).split(".")[0]) + ".o", sources))
 
@@ -45,7 +48,7 @@ print("\nexe: %sstan2pyro.o" % BUILD)
 print("\t$(CMD) -o %sstan2pyro %s*.o" % (BIN, BUILD)) 
 
 for i in range(len(names)):
-    print("\n%s: %s" % (names[i], sources[i]))
+    print("\n%s: %s" % (names[i], deps[i]))
     print("\tmkdir -p %s" % BUILD)
     print("\tmkdir -p %s" % BIN)
     print("\t$(CMD) -c -o %s %s" % ((names[i], sources[i])))
