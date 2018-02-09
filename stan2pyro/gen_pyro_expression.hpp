@@ -321,10 +321,18 @@ namespace stan {
       }
     };
 
+
+
     void pyro_generate_expression(const expression& e, bool user_facing,
                              std::ostream& o) {
       pyro_expression_visgen vis(o, user_facing);
       boost::apply_visitor(vis, e.expr_);
+    }
+
+    std::string pyro_generate_expression_string(const expression& e, bool user_facing) {
+      std::stringstream o;
+      pyro_generate_expression(e, user_facing, o);
+      return o.str();
     }
 
   }
