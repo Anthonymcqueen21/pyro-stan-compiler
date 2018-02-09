@@ -141,14 +141,15 @@ namespace stan {
       void operator()(const compound_assignment& x) const {
         std::string op = boost::algorithm::erase_last_copy(x.op_, "=");
         generate_indent(indent_, o_);
-        o_ << "stan::math::assign(";
+        // LHS
         generate_indexed_expr<true>(x.var_dims_.name_,
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
                                     x.var_type_.dims_.size(),
                                     false,
                                     o_);
-        o_ << ", ";
+        o_ << " = ";
+        // RHS
         if (x.op_name_.size() == 0) {
           o_ << "(";
           generate_indexed_expr<false>(x.var_dims_.name_,
@@ -172,12 +173,12 @@ namespace stan {
           pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
           o_ << ")";
         }
-        o_ << ");" << EOL;
+        o_ << EOL;
       }
 
       void operator()(const assignment& x) const {
         generate_indent(indent_, o_);
-        //o_ << "stan::math::assign(";
+        // LHS
         generate_indexed_expr<true>(x.var_dims_.name_,
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
@@ -185,6 +186,7 @@ namespace stan {
                                     false,
                                     o_);
         o_ << " = ";
+        // RHS
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         o_ << EOL;
       }
@@ -346,7 +348,7 @@ namespace stan {
           pyro_generate_expression(rs.return_value_, NOT_USER_FACING, o_);
           o_ << ")";
         }
-        o_ << ";" << EOL;
+        o_ << EOL;
       }
 
       void operator()(const for_statement& x) const {
