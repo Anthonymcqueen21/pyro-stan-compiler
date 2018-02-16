@@ -36,6 +36,48 @@ namespace stan {
       return true;
     }
 
+    template <bool isLHS>
+    void generate_pyro_indexed_expr(const std::string& expr,
+                               const std::vector<expression>& indexes,
+                               base_expr_type base_type, size_t e_num_dims,
+                               bool user_facing, std::ostream& o) {
+      if (user_facing) {
+        generate_indexed_expr_user(expr, indexes, o);
+        return;
+      }
+      size_t ai_size = indexes.size();
+      if (ai_size == 0) {
+        o << expr;
+        return;
+      }
+      if (ai_size <= (e_num_dims + 1) || !base_type.is_matrix_type()) {
+        o << expr;
+        for (size_t n = 0; n < ai_size; ++n) {
+          o << '[';
+          pyro_generate_expression_as_index(indexes[n], user_facing, o);
+          o << ']';
+        }
+      } else {
+        for (size_t n = 0; n < ai_size - 1; ++n)
+          o << (isLHS ? "get_base1_lhs(" : "get_base1(");
+        o << expr;
+        for (size_t n = 0; n < ai_size - 2; ++n) {
+          o << ',';
+          pyro_generate_expression_as_index(indexes[n], user_facing, o);
+          o << ',';
+          generate_quoted_string(expr, o);
+          o << ',' << (n+1) << ')';
+        }
+        o << ',';
+        pyro_generate_expression_as_index(indexes[ai_size - 2U], user_facing, o);
+        o << ',';
+        pyro_generate_expression_as_index(indexes[ai_size - 1U], user_facing, o);
+        o << ',';
+        generate_quoted_string(expr, o);
+        o << ',' << (ai_size - 1U) << ')';
+      }
+    }
+
   }
 }
 
@@ -54,9 +96,10 @@ void printer(const stan::lang::program &p) {
         var_decl vd = p.parameter_decl_[i];
     }*/
     int n_td = p.derived_data_decl_.first.size();
+    std::cout << "def transformed_data():" << "\n";
     for(int j=0; j<n_td; j++){
         std::string var_name = p.derived_data_decl_.first[j].name();
-        pyro_statement(p.derived_data_decl_.second[j], p, 0, std::cout);
+        pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
     }
     std::cout << "def model():" << "\n";
     stan::lang::pyro_statement(p.statement_, p, 1, std::cout);

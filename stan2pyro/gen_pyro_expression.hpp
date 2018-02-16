@@ -28,15 +28,23 @@ namespace stan {
 
     void generate_idxs_user(const std::vector<idx>& idxs, std::ostream& o);
 
+    template <bool isLHS>
+    void generate_pyro_indexed_expr(const std::string& expr,
+                               const std::vector<expression>& indexes,
+                               base_expr_type base_type, size_t e_num_dims,
+                               bool user_facing, std::ostream& o);
+
     struct pyro_expression_visgen : public visgen {
       /**
          true when generated expression might be reported to user
       */
       const bool user_facing_;
 
-      explicit pyro_expression_visgen(std::ostream& o, bool user_facing)
+      bool is_index_;
+
+      explicit pyro_expression_visgen(std::ostream& o, bool user_facing, bool is_index)
         : visgen(o),
-          user_facing_(user_facing) {
+          user_facing_(user_facing), is_index_(is_index) {
       }
 
       void operator()(const nil& /*x*/) const {
@@ -44,18 +52,22 @@ namespace stan {
       }
 
       void operator()(const int_literal& n) const {
-          o_ << "to_variable(";
+          if (!is_index_)
+              o_ << "to_variable(";
           o_ << n.val_;
-          o_ << ")";
+          if (!is_index_)
+              o_ << ")";
       }
 
       void operator()(const double_literal& x) const {
         std::string num_str = boost::lexical_cast<std::string>(x.val_);
-        o_ << "to_variable(";
+        if (!is_index_)
+            o_ << "to_variable(";
         o_ << num_str;
         if (num_str.find_first_of("eE.") == std::string::npos)
           o_ << ".0";  // trailing 0 to ensure C++ makes it a double
-        o_ << ")";
+        if (!is_index_)
+            o_ << ")";
       }
 
       void operator()(const array_expr& x) const {
@@ -131,7 +143,7 @@ namespace stan {
         for (size_t i = 0; i < x.dimss_.size(); ++i)
           for (size_t j = 0; j < x.dimss_[i].size(); ++j)
             indexes.push_back(x.dimss_[i][j]);  // wasteful copy, could use refs
-        generate_indexed_expr<false>(expr_string, indexes, base_type,
+        generate_pyro_indexed_expr<false>(expr_string, indexes, base_type,
                                      e_num_dims, user_facing_, o_);
       }
 
@@ -340,7 +352,14 @@ namespace stan {
 
     void pyro_generate_expression(const expression& e, bool user_facing,
                              std::ostream& o) {
-      pyro_expression_visgen vis(o, user_facing);
+      pyro_expression_visgen vis(o, user_facing, false);
+      boost::apply_visitor(vis, e.expr_);
+    }
+
+    // generate expression when the variable is an index
+    void pyro_generate_expression_as_index(const expression& e, bool user_facing,
+                             std::ostream& o) {
+      pyro_expression_visgen vis(o, user_facing, true);
       boost::apply_visitor(vis, e.expr_);
     }
 

@@ -31,6 +31,14 @@ namespace stan {
 
     void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o);
 
+    template <bool isLHS>
+    void generate_pyro_indexed_expr(const std::string& expr,
+                               const std::vector<expression>& indexes,
+                               base_expr_type base_type, size_t e_num_dims,
+                               bool user_facing, std::ostream& o);
+
+    void pyro_generate_expression_as_index(const expression& e, bool user_facing,
+                             std::ostream& o);
     /**
      * Visitor for generating statements.
      */
@@ -152,7 +160,7 @@ namespace stan {
         // RHS
         if (x.op_name_.size() == 0) {
           o_ << "(";
-          generate_indexed_expr<false>(x.var_dims_.name_,
+          generate_pyro_indexed_expr<false>(x.var_dims_.name_,
                                       x.var_dims_.dims_,
                                       x.var_type_.base_type_,
                                       x.var_type_.dims_.size(),
@@ -163,7 +171,7 @@ namespace stan {
           o_ << ")";
         } else {
           o_ << x.op_name_ << "(";
-          generate_indexed_expr<false>(x.var_dims_.name_,
+          generate_pyro_indexed_expr<false>(x.var_dims_.name_,
                                       x.var_dims_.dims_,
                                       x.var_type_.base_type_,
                                       x.var_type_.dims_.size(),
@@ -179,7 +187,7 @@ namespace stan {
       void operator()(const assignment& x) const {
         generate_indent(indent_, o_);
         // LHS
-        generate_indexed_expr<true>(x.var_dims_.name_,
+        generate_pyro_indexed_expr<true>(x.var_dims_.name_,
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
                                     x.var_type_.dims_.size(),
@@ -375,9 +383,9 @@ namespace stan {
       void operator()(const for_statement& x) const {
         generate_indent(indent_, o_);
         o_ << "for (int " << x.variable_ << " = ";
-        pyro_generate_expression(x.range_.low_, NOT_USER_FACING, o_);
+        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, o_);
         o_ << "; " << x.variable_ << " <= ";
-        pyro_generate_expression(x.range_.high_, NOT_USER_FACING, o_);
+        pyro_generate_expression_as_index(x.range_.high_, NOT_USER_FACING, o_);
         o_ << "; ++" << x.variable_ << ") {" << EOL;
         pyro_statement(x.statement_, p_, indent_ + 1, o_);
         generate_indent(indent_, o_);
