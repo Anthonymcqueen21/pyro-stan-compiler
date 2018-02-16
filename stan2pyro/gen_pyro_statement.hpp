@@ -231,9 +231,27 @@ namespace stan {
         o_ << ";" << EOL;
       }
 
+      void generate_observe(const expression& e) const {
+      // check if variable exists in data
+      // if so, generate observe statement
+          std::string expr_str = pyro_generate_expression_string(e, NOT_USER_FACING);
+          int n_d = p_.data_decl_.size();
+          // iterate over  data block  and check if variable is in data
+          for(int j=0;j<n_d; j++){
+              if (expr_str == p_.data_decl_[j].name())
+                  o_ << ", obs=" << expr_str;
+          }
+          // iterate over  data block  and check if variable is in transformed data
+          int n_td = p_.derived_data_decl_.first.size();
+          for(int j=0;j<n_td; j++){
+              if (expr_str == p_.derived_data_decl_.first[j].name())
+                  o_ << ", obs=" << expr_str;
+          }
+
+      }
+
       void operator()(const sample& x) const {
         std::string prob_fun = get_prob_fun(x.dist_.family_);
-        generate_indent(indent_, o_);
 
         // PYRO_ADDED: identifying all transformed paramters expressions in the arguments of sampled
         // distributions and calling the relevant statement before using the variable
@@ -255,6 +273,7 @@ namespace stan {
           // pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
         }
 
+        generate_indent(indent_, o_);
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         o_ << " = pyro.sample(\"";
         //o_ << "lp_accum__.add(" << prob_fun << "<propto__>(";
@@ -283,7 +302,9 @@ namespace stan {
           if (i != 0) o_ << ", ";
           pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
         }
-        o_ << "))" << EOL;
+        o_ << ")";
+        generate_observe(x.expr_);
+        o_ << ")" << EOL;
 
       }
 

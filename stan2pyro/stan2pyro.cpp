@@ -53,8 +53,13 @@ void printer(const stan::lang::program &p) {
     for (int i =0; i < n; i++){
         var_decl vd = p.parameter_decl_[i];
     }*/
-
-    stan::lang::pyro_statement(p.statement_, p, 0, std::cout);
+    int n_td = p.derived_data_decl_.first.size();
+    for(int j=0; j<n_td; j++){
+        std::string var_name = p.derived_data_decl_.first[j].name();
+        pyro_statement(p.derived_data_decl_.second[j], p, 0, std::cout);
+    }
+    std::cout << "def model():" << "\n";
+    stan::lang::pyro_statement(p.statement_, p, 1, std::cout);
 }
 
 int main(int argc, char *argv[]) {
