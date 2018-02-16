@@ -241,6 +241,19 @@ namespace stan {
       void operator()(const fun& fx) const {
         // first test if short-circuit op (binary && and || applied to
         // primitives; overloads are eager, not short-circuiting)
+        // overwrite function name from stan math functions to torch functions
+        std::string fx_name = fx.name_;
+        std::vector<std::string> split;
+        if (fx_name.find("stan::") == 0) {
+          // handles bernoulli and categorical logit distributions
+            std::string token;
+            std::istringstream tokenStream(fx_name);
+            while (std::getline(tokenStream, token, ':')) {
+                if (token != "") split.push_back(token);
+            }
+            // TODO need to manually convert expressions to torch expressions
+            // eg fma = addmm
+        }
         if (fx.name_ == "logical_or" || fx.name_ == "logical_and") {
           o_ << "(primitive_value(";
           boost::apply_visitor(*this, fx.args_[0].expr_);
@@ -250,7 +263,9 @@ namespace stan {
           o_ << "))";
           return;
         }
-        o_ << fx.name_ << '(';
+//         o_ << fx.name_ << '(';
+        if (split.size() > 1) o_ << "torch." << split[split.size() - 1] << '(';
+        else o_ << fx_name << '(';
         for (size_t i = 0; i < fx.args_.size(); ++i) {
           if (i > 0) o_ << ',';
           boost::apply_visitor(*this, fx.args_[i].expr_);
