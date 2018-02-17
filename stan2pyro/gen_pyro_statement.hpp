@@ -380,18 +380,31 @@ namespace stan {
         o_ << EOL;
       }
 
-      void operator()(const for_statement& x) const {
-        generate_indent(indent_, o_);
-        o_ << "for (int " << x.variable_ << " = ";
-        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, o_);
-        o_ << "; " << x.variable_ << " <= ";
-        pyro_generate_expression_as_index(x.range_.high_, NOT_USER_FACING, o_);
-        o_ << "; ++" << x.variable_ << ") {" << EOL;
-        pyro_statement(x.statement_, p_, indent_ + 1, o_);
-        generate_indent(indent_, o_);
-        o_ << "}" << EOL;
+      bool is_number(std::string& s) const {
+          if (s[0] == '-') s = s.substr(1, s.size());
+          std::string::const_iterator it = s.begin();
+          while (it != s.end() && std::isdigit(*it)) ++it;
+          return !s.empty() && it == s.end();
       }
 
+      void operator()(const for_statement& x) const {
+        generate_indent(indent_, o_);
+        std::stringstream tmp;
+        o_ << "for " << x.variable_ << " in ";
+        o_ << "range(";
+        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, tmp);
+        std::string tmp_str = tmp.str();
+        if (is_number(tmp_str)) {
+            int index = atoi(tmp_str.c_str());
+            o_ << index - 1 << ", ";
+        } else
+            o_ << tmp_str << " - 1, ";
+        pyro_generate_expression_as_index(x.range_.high_, NOT_USER_FACING, o_);
+        o_ <<"):" << EOL;
+        pyro_statement(x.statement_, p_, indent_ + 1, o_);
+      }
+
+      // TODO by example
       void operator()(const for_array_statement& x) const {
         generate_indent(indent_, o_);
         o_ << "for (auto& " << x.variable_ << " : ";
