@@ -3,6 +3,8 @@
 #include <stan/lang/ast.hpp>
 #include <gen_pyro_statement.hpp>
 #include <gen_pyro_expression.hpp>
+#include <stan/lang/generator/generate_indent.hpp>
+#include <stan/lang/ast/node/int_var_decl.hpp>
 
 #include <boost/variant/apply_visitor.hpp>
 #include <ostream>
@@ -85,7 +87,6 @@ namespace stan {
 
 //TODO: write avisitor struct for statement_ similar to statement_visgen.hpp in /stan/lang/generator/
 void printer(const stan::lang::program &p) {
-    std::cout<<"PRINTING PROGRAM"<<std::endl;
     //int N = p.parameter_decl_.size(); //std::vector<var_decl>
     //std::cout<<"PRINTING PROGRAM: "<<N<<std::endl;
     //for(int i=0; i < N; i++){
@@ -96,12 +97,31 @@ void printer(const stan::lang::program &p) {
         var_decl vd = p.parameter_decl_[i];
     }*/
     int n_td = p.derived_data_decl_.first.size();
-    std::cout << "def transformed_data():" << "\n";
-    for(int j=0; j<n_td; j++){
-        std::string var_name = p.derived_data_decl_.first[j].name();
-        pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
+    if (n_td > 0) {
+        std::cout << "def transformed_data(data):" << "\n";
+        for(int j=0; j<n_td; j++){
+            std::string var_name = p.derived_data_decl_.first[j].name();
+            pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
+            stan::lang::generate_indent(1, std::cout);
+            std::cout << "data[\"" << var_name << "\"] = ";
+            std::cout << var_name << "\n";
+        }
     }
-    std::cout << "def model():" << "\n";
+    std::cout << "def init_params(params):" << "\n";
+    for (int i = 0; i < p.parameter_decl_.size(); i++) {
+        stan::lang::generate_indent(1, std::cout);
+        std::cout << "params[\"" << p.parameter_decl_[i].name() << "\"] = ";
+        std::cout << "dist.Uniform(to_var(0), to_var(10)) \n";
+//         if (dynamic_cast<int_var_decl*>(&(p.parameter_decl_[i])) != NULL) {
+//             int_var_decl* param = dynamic_cast<int_var_decl*>(&(p.parameter_decl_[i]));
+//             if (param->has_low()) {
+//                 pyro_generate_expression(param->low_, 1, std::cout);
+//             if (param->has_high()) {
+//                 pyro_generate_expression(param->high_, 1, std::cout);
+//             }
+//         }
+    }
+    std::cout << "def model(data):" << "\n";
     stan::lang::pyro_statement(p.statement_, p, 1, std::cout);
 }
 
