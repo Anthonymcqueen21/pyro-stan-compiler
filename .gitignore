@@ -4,3 +4,4 @@ data/
 *.o
 bin/
 makefile
+__pycache__
