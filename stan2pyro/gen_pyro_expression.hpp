@@ -276,7 +276,11 @@ namespace stan {
           return;
         }
 //         o_ << fx.name_ << '(';
-        if (split.size() > 1) o_ << "torch." << split[split.size() - 1] << '(';
+        if (split.size() > 1) {
+            std::string fn_name = split[split.size() - 1];
+            fn_name = fn_name == "fma" ? "addmm" : fn_name;
+            o_ << "torch." << fn_name << '(';
+        }
         else o_ << fx_name << '(';
         for (size_t i = 0; i < fx.args_.size(); ++i) {
           if (i > 0) o_ << ',';
