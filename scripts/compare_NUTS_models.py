@@ -19,11 +19,11 @@ def run_stan(data, sfile, init_values, n_samples, model_cache=None):
         sm = pystan.StanModel(model_code=code)
         if model_cache is not None:
             save_p(sm, model_cache)
-    fit = sm.sampling(data=data,iter=n_samples,algorithm="NUTS")
+    fit = sm.sampling(data=data,iter=n_samples,chains=1,algorithm="NUTS")
     print(fit)
-    bb()
-    site_values=fit.extract(permuted=True)
 
+    site_values=fit.extract(permuted=True)
+    bb()
     return {k: np.mean(site_values[k]) for k in site_values.keys()}
 
 def run_pyro(data, pfile, n_samples, params):
@@ -38,13 +38,15 @@ def run_pyro(data, pfile, n_samples, params):
 
     nuts_kernel = NUTS(model, step_size=0.0855)
     mcmc_run = MCMC(nuts_kernel, num_samples=n_samples, warmup_steps=int(n_samples/2))
-    posteriors = {"mu": [], "log_sigma" : []}
-    i = 0
+    posteriors = {k: [] for k in params}
+
     for trace, _ in mcmc_run._traces(data, params):
         for k in posteriors:
             posteriors[k].append(trace.nodes[k]['value'])
-        i+=1
-        print(i)
+
+
+    #posteriors["sigma"] = list(map(torch.exp, posteriors["log_sigma"]))
+    #del posteriors["log_sigma"]
 
     posterior_means = {k: torch.mean(torch.stack(posteriors[k]), 0) for k in posteriors}
     bb()
@@ -73,7 +75,8 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--stan-model-file', required=True, type=str, help="stan model file")
     parser.add_argument('-p', '--pyro-model-file', required=True, type=str, help="Pyro model import path e.g. test.p1")
     parser.add_argument('-mc', '--model-cache', default=None, type=str, help="Stan model cache file")
+    parser.add_argument('-ns', '--num-samples', default=1000, type=int, help="number of samples / iterations for HMC")
 
     args = parser.parse_args()
     compare_models(args.data_file, args.stan_model_file,
-                   args.pyro_model_file, model_cache=args.model_cache)
+                   args.pyro_model_file, model_cache=args.model_cache, n_samples=args.num_samples)

@@ -2,6 +2,7 @@ import os
 import os.path
 from utils import mkdir_p
 from divide_stan_data import divide_data
+from pdb import set_trace as bb
 
 def get_all_data_paths(root, ofldr):
     iofiles = []
@@ -13,7 +14,7 @@ def get_all_data_paths(root, ofldr):
                 nfldr = os.path.join(ofldr, (os.path.basename(path)))
                 mkdir_p(nfldr)
                 model_file = os.path.join(path, name.replace(".data.R", ".stan"))
-                os.system("cp %s %s" % (model_file, nfldr))
+                os.system("cp %s/*.stan %s" % (path, nfldr))
                 #nfile = os.path.join(nfldr, name)
                 iofiles.append((dfile,nfldr))
     return iofiles
@@ -31,7 +32,7 @@ def convert_all_data(efldr, ofldr):
         else:
             success = divide_data(jfile, nfldr)
         rate = (rate[0]+success, rate[1]+1)
-        print "%d/%d success" % (rate[0], rate[1])
+        print "%d/%d (%d) success" % (rate[0], rate[1], len(iofiles))
 
     print "Finally %d/%d success" % (rate[0], rate[1])
 

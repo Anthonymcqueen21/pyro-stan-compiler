@@ -14,6 +14,8 @@
 #include <string>
 #include <cstring>
 
+#define NOT_USER_FACING false
+
 namespace stan {
   namespace lang {
 

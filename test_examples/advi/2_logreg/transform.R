@@ -1,3 +1,4 @@
+#!/usr/bin/env Rscript
 #library(rjson)
 source("model.data.R")
 #x <- lapply(ls(), function(x) c(x,get(x)))

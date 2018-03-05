@@ -350,8 +350,7 @@ namespace stan {
 
 
 
-    void pyro_generate_expression(const expression& e, bool user_facing,
-                             std::ostream& o) {
+    void pyro_generate_expression(const expression& e, bool user_facing, std::ostream& o) {
       pyro_expression_visgen vis(o, user_facing, false);
       boost::apply_visitor(vis, e.expr_);
     }
