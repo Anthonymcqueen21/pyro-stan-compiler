@@ -279,6 +279,9 @@ namespace stan {
         if (split.size() > 1) {
             std::string fn_name = split[split.size() - 1];
             fn_name = fn_name == "fma" ? "addmm" : fn_name;
+            fn_name = fn_name == "not_a_number" ? "isnan" : fn_name;
+            fn_name = fn_name == "fmin" ? "min" : fn_name;
+            fn_name = fn_name == "fmax" ? "max" : fn_name;
             o_ << "torch." << fn_name << '(';
         }
         else o_ << fx_name << '(';

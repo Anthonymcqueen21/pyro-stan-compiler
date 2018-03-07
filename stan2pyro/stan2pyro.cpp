@@ -101,11 +101,11 @@ namespace stan {
         } else if (has_lb(x)) {
           pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
           ss << get_dims_expand(x.dims_);
-          ss<<", 1.+";
+          ss<<", 1. +";
           pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
           ss << get_dims_expand(x.dims_);
         } else if (has_ub(x)) {
-          ss<<"-1.+";
+          ss<<"-1. +";
           pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
           ss << get_dims_expand(x.dims_);
           ss<<",";
@@ -196,6 +196,23 @@ namespace stan {
   }
 }
 
+void extract_data(const std::vector<stan::lang::var_decl> data,
+                  const std::pair<std::vector<stan::lang::var_decl>,
+                                  std::vector<stan::lang::statement> > derived_data,
+                  int n_td) {
+    for (int i = 0; i < data.size(); i++) {
+        stan::lang::generate_indent(1, std::cout);
+        std::cout << data[i].name() <<  " = "<< "data[\"" << data[i].name() << "\"];\n";
+    }
+
+    if (n_td > 0) {
+        for(int j=0; j<n_td; j++){
+            std::string var_name = derived_data.first[j].name();
+            stan::lang::generate_indent(1, std::cout);
+            std::cout << var_name << " = data[\"" << var_name << "\"];\n";
+        }
+    }
+}
 
 
 //TODO: write a visitor struct for statement_ similar to statement_visgen.hpp in /stan/lang/generator/
@@ -220,7 +237,8 @@ void printer(const stan::lang::program &p) {
             std::cout << var_name << "\n";
         }
     }
-    std::cout << "\ndef init_params(params):" << "\n";
+    std::cout << "\ndef init_params(data, params):" << "\n";
+    extract_data(p.data_decl_, p.derived_data_decl_, n_td);
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
         std::cout << "params[\"" << p.parameter_decl_[i].name() << "\"] = ";
@@ -231,18 +249,7 @@ void printer(const stan::lang::program &p) {
 
     }
     std::cout << "\ndef model(data, params):" << "\n";
-    for (int i = 0; i < p.data_decl_.size(); i++) {
-        stan::lang::generate_indent(1, std::cout);
-        std::cout << p.data_decl_[i].name() <<  " = "<< "data[\"" << p.data_decl_[i].name() << "\"];\n";
-    }
-
-    if (n_td > 0) {
-        for(int j=0; j<n_td; j++){
-            std::string var_name = p.derived_data_decl_.first[j].name();
-            stan::lang::generate_indent(1, std::cout);
-            std::cout << var_name << " = data[\"" << var_name << "\"];\n";
-        }
-    }
+    extract_data(p.data_decl_, p.derived_data_decl_, n_td);
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
         std::cout << p.parameter_decl_[i].name() <<  "= params[\"" << p.parameter_decl_[i].name() << "\"];\n";
