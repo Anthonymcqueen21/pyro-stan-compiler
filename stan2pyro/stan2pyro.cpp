@@ -231,6 +231,17 @@ void printer(const stan::lang::program &p) {
         std::cout << "\ndef transformed_data(data):" << "\n";
         for(int j=0; j<n_td; j++){
             std::string var_name = p.derived_data_decl_.first[j].name();
+            stan::lang::generate_indent(1, std::cout);
+            std::cout << var_name << " = ";
+            // TODO: for each dimension expression, output that expression
+            int n_dims = p.derived_data_decl_.first[j].dims().size();
+            if (n_dims == 0) std::cout<< "0." <<std::endl;
+            else std::cout<< "torch.zeros(";
+            for(int kk=0; kk<n_dims; kk++){
+                stan::lang::pyro_generate_expression(p.derived_data_decl_.first[j].dims()[kk], NOT_USER_FACING, std::cout);
+                if (kk != n_dims-1) std::cout<<",";
+                else std::cout<<")\n";
+            }
             pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
             stan::lang::generate_indent(1, std::cout);
             std::cout << "data[\"" << var_name << "\"] = ";

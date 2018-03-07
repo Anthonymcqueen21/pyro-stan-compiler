@@ -1,21 +1,26 @@
-from utils import load_data, import_by_string, exists_p, load_p, save_p
+from utils import load_data, import_by_string, exists_p, load_p, \
+    save_p, do_pyro_compatibility_hacks, mk_module, tensorize_data
 import pystan
 import numpy as np
 import pyro.poutine as poutine
 from pdb import set_trace as bb
 #TODO: init_values is a dictionary mapping variable name to values/floats
 
+
+
 def run_stan(data, sfile, init_values, n_samples, model_cache=None):
     if model_cache is not None and exists_p(model_cache):
         sm = load_p(model_cache)
     else:
         with open(sfile, "r") as f:
-                code = f.read()
+            code = f.read()
+        code = do_pyro_compatibility_hacks(code)
         sm = pystan.StanModel(model_code=code)
         if model_cache is not None:
             save_p(sm, model_cache)
     fit = sm.sampling(data=data,iter=n_samples,warmup=0,chains=1,
-                      init=[init_values] if init_values is not None else None, algorithm="Fixed_param")
+                      init=[init_values]
+                      if init_values is not None else None, algorithm="Fixed_param")
     site_values=fit.extract(permuted=True)
 
     log_probs = []
@@ -42,6 +47,7 @@ def run_pyro(site_values, data, pfile, n_samples, params):
     transformed_data = import_by_string(pfile + ".transformed_data")
     if transformed_data is not None:
         transformed_data(data)
+    tensorize_data(data)
     log_pdfs = []
     for j in range(n_samples):
         if n_samples > 1:
@@ -58,14 +64,19 @@ def run_pyro(site_values, data, pfile, n_samples, params):
 
 
 def compare_models(dfiles, sfile, pfile, n_samples=1, model_cache=None):
+    mk_module(pfile)
     lp_vals = []
     for dfile in dfiles:
         data = load_data(dfile)
 
         params ={}
-        import_by_string(pfile + ".init_params")(params)
-        print(params)
-        site_values, s_log_probs = run_stan(data,sfile, params, n_samples, model_cache)
+        import_by_string(pfile + ".init_params")(data, params)
+
+        init_values = {k: params[k].data.cpu().numpy() for k in params}
+        init_values = {k: init_values[k][0] if len(init_values[k])==1 else init_values[k] for k in init_values}
+
+        print(init_values)
+        site_values, s_log_probs = run_stan(data,sfile, init_values, n_samples, model_cache)
         p_log_probs = run_pyro(site_values, data, pfile, n_samples, params)
 
         p_avg = np.mean(p_log_probs)
