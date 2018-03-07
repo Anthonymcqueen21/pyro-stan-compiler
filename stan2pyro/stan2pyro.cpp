@@ -138,7 +138,7 @@ namespace stan {
       void operator()(const double_var_decl& x) const {
         int n_dims = x.dims_.size();
 
-        o_<<"dist.Uniform("<<function_args(x)<<") # real/double";
+        o_<<"dist.Uniform("<<function_args(x)<<").sample() # real/double";
         o_<<std::endl;
       }
       void operator()(const nil& /*x*/) const { }  // dummy
@@ -202,14 +202,14 @@ void extract_data(const std::vector<stan::lang::var_decl> data,
                   int n_td) {
     for (int i = 0; i < data.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
-        std::cout << data[i].name() <<  " = "<< "data[\"" << data[i].name() << "\"];\n";
+        std::cout << data[i].name() <<  " = "<< "data[\"" << data[i].name() << "\"]\n";
     }
 
     if (n_td > 0) {
         for(int j=0; j<n_td; j++){
             std::string var_name = derived_data.first[j].name();
             stan::lang::generate_indent(1, std::cout);
-            std::cout << var_name << " = data[\"" << var_name << "\"];\n";
+            std::cout << var_name << " = data[\"" << var_name << "\"]\n";
         }
     }
 }
@@ -257,13 +257,12 @@ void printer(const stan::lang::program &p) {
         // TODO: use init_visgen
         stan::lang::pyro_init_visgen  iv(0,std::cout);
         boost::apply_visitor(iv, p.parameter_decl_[i].decl_);
-
     }
     std::cout << "\ndef model(data, params):" << "\n";
     extract_data(p.data_decl_, p.derived_data_decl_, n_td);
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
-        std::cout << p.parameter_decl_[i].name() <<  "= params[\"" << p.parameter_decl_[i].name() << "\"];\n";
+        std::cout << p.parameter_decl_[i].name() <<  " = params[\"" << p.parameter_decl_[i].name() << "\"]\n";
     }
     stan::lang::pyro_statement(p.statement_, p, 1, std::cout);
 }

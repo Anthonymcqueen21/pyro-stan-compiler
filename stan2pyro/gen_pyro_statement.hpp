@@ -187,6 +187,7 @@ namespace stan {
       }
 
       void operator()(const assignment& x) const {
+        // overwrite o_ to indicate ih for loop?
         generate_indent(indent_, o_);
         // LHS
         generate_pyro_indexed_expr<true>(x.var_dims_.name_,
@@ -197,7 +198,13 @@ namespace stan {
                                     o_);
         o_ << " = ";
         // RHS
-        pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+        if (x.var_dims_.dims_.size() == 0) {
+            pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+        } else {
+            o_ << "to_float(";
+            pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+            o_ << ")";
+        }
         o_ << EOL;
       }
 
