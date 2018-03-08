@@ -1,20 +1,15 @@
-from utils import load_data, import_by_string, exists_p, load_p, \
-    save_p, do_pyro_compatibility_hacks, mk_module, tensorize_data
+from utils import load_data, import_by_string, exists_p, load_p, to_float, \
+    save_p, do_pyro_compatibility_hacks, mk_module, tensorize_data, variablize_params
 import pystan
 import numpy as np
 import pyro.poutine as poutine
 from pdb import set_trace as bb
 #TODO: init_values is a dictionary mapping variable name to values/floats
 
-
-
-def run_stan(data, sfile, init_values, n_samples, model_cache=None):
+def run_stan(data, code, init_values, n_samples, model_cache=None):
     if model_cache is not None and exists_p(model_cache):
         sm = load_p(model_cache)
     else:
-        with open(sfile, "r") as f:
-            code = f.read()
-        code = do_pyro_compatibility_hacks(code)
         sm = pystan.StanModel(model_code=code)
         if model_cache is not None:
             save_p(sm, model_cache)
@@ -28,7 +23,7 @@ def run_stan(data, sfile, init_values, n_samples, model_cache=None):
         if n_samples > 1:
             params = {v: site_values[v][i] for v in site_values}
         else:
-            params = {v: site_values[v] for v in site_values}
+            params = {v: float(site_values[v]) if  site_values[v].shape == () else site_values[v][0] for v in site_values}
         log_p = fit.log_prob(fit.unconstrain_pars(params), adjust_transform=True)
         #lp2 = fit.log_prob(fit.unconstrain_pars(params), adjust_transform=True)
         log_probs.append(log_p)
@@ -38,64 +33,104 @@ def run_stan(data, sfile, init_values, n_samples, model_cache=None):
         ### Similar test case as https://github.com/stan-dev/pystan/blob/develop/pystan/tests/test_rstan_stanfit.py#L61
     return site_values, log_probs
 
-def run_pyro(site_values, data, pfile, n_samples, params):
+
+def get_num_log_probs(trace):
+    n = 0
+    for name in trace.nodes:
+        if name not in ['_INPUT', '_OUTPUT', '_RETURN']:
+            n += np.product(trace.nodes[name]['value'].shape)
+    assert n > 0
+    return n
+
+def run_pyro(site_values, data, model, transformed_data, n_samples, params):
 
     # import model, transformed_data functions (if exists) from pyro module
 
-    model = import_by_string(pfile + ".model")
     assert model is not None, "model couldn't be imported"
-    transformed_data = import_by_string(pfile + ".transformed_data")
     if transformed_data is not None:
         transformed_data(data)
+
     tensorize_data(data)
+    variablize_params(params)
+
     log_pdfs = []
+    n_log_probs = None
     for j in range(n_samples):
         if n_samples > 1:
             sample_site_values = {v: site_values[v][j] for v in site_values}
         else:
-            sample_site_values = {v: site_values[v] for v in site_values}
+            sample_site_values = {v: float(site_values[v]) if site_values[v].shape == () else site_values[v][0] for v in
+                      site_values}
+        #print(sample_site_values)
+        variablize_params(sample_site_values)
+
         model_trace = poutine.trace(poutine.condition(model, data=sample_site_values),
                                     graph_type="flat").get_trace(data, params)
         log_p = model_trace.log_pdf()
-
+        if n_log_probs is None:
+            n_log_probs = get_num_log_probs(model_trace)
+        else:
+            assert n_log_probs == get_num_log_probs(model_trace)
         #print(log_p.data.numpy())
-        log_pdfs.append(log_p)
-    return log_pdfs
+        log_pdfs.append(to_float(log_p))
+    return log_pdfs, n_log_probs
 
 
-def compare_models(dfiles, sfile, pfile, n_samples=1, model_cache=None):
+
+def process_files(pfile, dfiles, sfile):
+    with open(sfile, "r") as f:
+        code = f.read()
+    code = do_pyro_compatibility_hacks(code)
+
+    def sanitize_module_loading_file(pfile):
+        if pfile.endswith(".py"):
+            pfile = pfile[:-3]
+        pfile = pfile.replace("/", ".")
+        pfile = pfile.strip(".")
+        return pfile
+
+    pfile = sanitize_module_loading_file(pfile)
     mk_module(pfile)
+
+    def get_fns_pyro(pfile):
+        model = import_by_string(pfile + ".model")
+        assert model is not None, "model couldn't be imported"
+        transformed_data = import_by_string(pfile + ".transformed_data")
+        init_params = import_by_string(pfile + ".init_params")
+        return init_params, model, transformed_data
+
+    init_params, model, transformed_data = get_fns_pyro(pfile)
+
+    datas = [load_data(dfile) for dfile in dfiles]
+
+    return code, datas, init_params, model, transformed_data
+
+
+def compare_models(code, datas, init_params, model, transformed_data, n_samples=1, model_cache=None):
     lp_vals = []
-    for dfile in dfiles:
-        data = load_data(dfile)
-
+    for data in datas:
         params ={}
-        import_by_string(pfile + ".init_params")(data, params)
+        init_params(data, params)
 
-        init_values = {k: params[k].data.cpu().numpy() for k in params}
-        init_values = {k: init_values[k][0] if len(init_values[k])==1 else init_values[k] for k in init_values}
+        init_values = {k: params[k].data.cpu().numpy().tolist() for k in params}
+        init_values = {k: (init_values[k][0]) if len(init_values[k])==1 else np.array(init_values[k]) for k in init_values}
 
-        print(init_values)
-        site_values, s_log_probs = run_stan(data,sfile, init_values, n_samples, model_cache)
-        p_log_probs = run_pyro(site_values, data, pfile, n_samples, params)
+        #print(init_values)
+        site_values, s_log_probs = run_stan(data, code, init_values, n_samples, model_cache)
+        p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
 
-        p_avg = np.mean(p_log_probs)
-        s_avg = np.mean(s_log_probs)
+        p_avg = (np.mean(p_log_probs))/n_log_probs
+        s_avg = (np.mean(s_log_probs))/n_log_probs
         lp_vals.append((p_avg, s_avg))
 
-        """
-        if abs(p_avg - s_avg) >= 0.1:
-            print("p/m log_probs sum mismatch s=%0.5f p=%0.5f" % (s_avg, p_avg))
-        else:
-            print("It matches!")
-        """
     assert len(lp_vals) >= 2
     diffs = list(map(lambda x: x[0]-x[1], lp_vals))
     diff0 = diffs[0]
     for diff_v in diffs:
-        assert abs(diff_v-diff0) < 1e-3, "%s // %s" % (lp_vals, diffs)
+        assert abs(diff_v-diff0) < 1e-2, "%s // %s" % (lp_vals, diffs)
+        #print(abs(diff_v-diff0))
     print("Log probs match with a constant difference pyro-stan of approx. %0.3f" % diff0)
-    bb()
+
 
 if __name__ == "__main__":
     import argparse
@@ -105,7 +140,10 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--stan-model-file', required=True, type=str, help="stan model file")
     parser.add_argument('-p', '--pyro-model-file', required=True, type=str, help="Pyro model import path e.g. test.p1")
     parser.add_argument('-mc', '--model-cache', default=None, type=str, help="Stan model cache file")
+    parser.add_argument('-n', '--n-samples', default=1, type=int, help="num samples")
 
     args = parser.parse_args()
-    compare_models(args.data_files, args.stan_model_file,
-                   args.pyro_model_file, model_cache=args.model_cache)
+    code, datas, init_params, model, transformed_data = \
+        process_files(args.pyro_model_file,args.data_files, args.stan_model_file)
+    compare_models(code, datas, init_params, model, transformed_data ,
+                   n_samples=args.n_samples, model_cache=args.model_cache)

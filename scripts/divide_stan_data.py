@@ -72,6 +72,33 @@ def write_to_folder(ofolder, jd1, jd2, dfile):
     print_shape(jd2)
 
 
+
+def divide_json_data(jdata):
+    n = len(jdata[0])
+    assert len(jdata) == 2 and len(jdata[1]) == n
+
+    # identify all dims
+    int_ixs, int_vals = [], []
+
+    for i in range(n):
+        var = jdata[0][i]
+        val = jdata[1][i]
+        if is_int(val) and val >= 2:
+            to_divide_ixs = get_arrays_to_divide(n, jdata, val)
+            if to_divide_ixs is not None:
+                jd1 = copy.deepcopy(jdata)
+                jd2 = copy.deepcopy(jdata)
+                jd1[1][i] = int(val / 2)
+                jd2[1][i] = val - int(val / 2)
+                for j in to_divide_ixs:
+                    jd1[1][j] = jd1[1][j][:int(val / 2)]
+                    jd2[1][j] = jd2[1][j][int(val / 2):]
+
+                return True, jd1, jd2
+    print("Cannot divide this dataset! :(")
+    print_shape(jdata)
+    return False, None, None
+
 def divide_data(dfile, ofolder):
     jdata = load_json(dfile)
     if not validate_json(jdata):

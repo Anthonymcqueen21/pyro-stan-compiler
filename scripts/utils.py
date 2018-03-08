@@ -9,14 +9,33 @@ import numpy as np
 import pyro.distributions as pdist
 from os.path import join
 
+def fma(x,y,z):
+    return x*y+z
+
+EPSILON = 1e-7
+
+cache_init = {}
+
+
 def tensorize_data(data):
     for k in data:
         if isinstance(data[k], float) or isinstance(data[k], int):
             pass
         elif isinstance(data[k], list):
             data[k] = to_variable(data[k])
+        elif isinstance(data[k], torch.Tensor):
+            data[k] = to_variable(data[k])
+        elif isinstance(data[k], Variable):
+            pass
         else:
             assert False, "invalid tensorization of data dict"
+
+def set_seed(seed, use_cuda):
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        if use_cuda:
+            torch.cuda.manual_seed(seed)
 
 
 def mk_module(mod, path="."):
@@ -53,6 +72,20 @@ class DIST(dict):
                 raise
 dist = DIST()
 
+def init_real_and_cache(name, low=None, high=None, dims=(1)):
+    if name in cache_init:
+        return cache_init[name]
+    if low is None:
+        low = -2.
+        if high is not None and low >= high:
+            low = high -1.
+    if high is None:
+        high = 2.
+        if low >= high:
+            high = low + 1.
+    cache_init[name] = dist.Uniform(to_variable(low).expand(dims), to_variable(high).expand(dims))()
+    return cache_init[name]
+
 def import_by_string(full_name):
     try:
         module_name, unit_name = full_name.rsplit('.', 1)
@@ -84,23 +117,32 @@ def mkdir_p(path):
             raise
 
 def to_float(x):
-    if isinstance(x, collections.Iterable):
+    if isinstance(x, torch.Tensor):
+        if len(x.shape) ==0:
+            return float(x)
+        assert len(x) == 1
+        return x[0]
+    elif isinstance(x, collections.Iterable):
         c = 0
         for val in x:
             c+=1
         assert c == 1
         for val in x:
             return val
-    elif isinstance(x, torch.Tensor):
-        assert len(x) == 1
-        return x[0]
+
     elif isinstance(x, Variable):
         return x.item()
     else:
-        float(x)
+        return float(x)
+
+def variablize_params(params):
+    for k in params:
+        params[k] = to_variable(params[k], requires_grad=True)
 
 def to_variable(x, requires_grad=False):
-    if isinstance(x, collections.Iterable):
+    if isinstance(x, torch.Tensor):
+        return Variable(x, requires_grad=requires_grad)
+    elif isinstance(x, collections.Iterable):
         return Variable(torch.FloatTensor(x), requires_grad=requires_grad)
     elif isinstance(x, torch.Tensor):
         return Variable(x, requires_grad=requires_grad)
@@ -124,9 +166,7 @@ def validate_json(rdata):
     return True
 
 
-def load_data(fname):
-    with open(fname,"r") as f:
-        rdata = json.load(f)
+def json_file_to_mem_format(rdata):
     assert validate_json(rdata)
     assert len(rdata) == 2
     data = {}
@@ -136,3 +176,8 @@ def load_data(fname):
         if key != "args":
             data[key] = rdata[1][i]
     return data
+
+def load_data(fname):
+    with open(fname,"r") as f:
+        rdata = json.load(f)
+    return json_file_to_mem_format(rdata)

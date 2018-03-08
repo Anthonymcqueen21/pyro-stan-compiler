@@ -5,3 +5,9 @@ data/
 bin/
 makefile
 __pycache__
+*.pyc
+*.pkl
+.cproject
+.idea/
+.project
+.settings/
