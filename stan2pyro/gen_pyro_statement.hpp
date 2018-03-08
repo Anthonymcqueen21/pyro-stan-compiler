@@ -19,6 +19,7 @@
 namespace stan {
   namespace lang {
 
+    void generate_var_init_python(var_decl v, int indent, std::ostream& o);
 
     void pyro_generate_expression(const expression& e, bool user_facing,
                                   std::ostream& o);
@@ -209,6 +210,7 @@ namespace stan {
       }
 
       void operator()(const assgn& y) const {
+
         generate_indent(indent_, o_);
         o_ << "stan::model::assign(";
 
@@ -292,29 +294,14 @@ namespace stan {
 
         generate_indent(indent_, o_);
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
-        o_ << " = pyro.sample(\"";
+        o_ << " = _pyro_sample(";
         //o_ << "lp_accum__.add(" << prob_fun << "<propto__>(";
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+        o_ << ", \"";
+        pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+        o_<<"\", \"";
         std::string dist = x.dist_.family_;
-        bool is_logit = false;
-        std::vector<std::string> split;
-        // capitalize first letter of distribution
-        dist[0] = toupper(dist[0]);
-        if (dist.find("logit") != std::string::npos) {
-          // handles bernoulli and categorical logit distributions
-            is_logit = true;
-            std::string token;
-            std::istringstream tokenStream(dist);
-            while (std::getline(tokenStream, token, '_')) {
-                split.push_back(token);
-            }
-            // only works for C++11
-        //  boost::split(split, dist, [](char c){return c == '_';});
-        }
-
-
-        if (!is_logit) o_<<"\", "<<"dist."<<dist<<"(";
-        else o_<<"\", "<<"dist."<<split[0]<<"(logit=";
+        o_<<dist<<"\", (";
         for (size_t i = 0; i < x.dist_.args_.size(); ++i) {;
           if (i != 0) o_ << ", ";
           pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
@@ -333,20 +320,23 @@ namespace stan {
       }
 
       void operator()(const statements& x) const {
-        /*bool has_local_vars = x.local_decl_.size() > 0;
+        bool has_local_vars = x.local_decl_.size() > 0;
         if (has_local_vars) {
           generate_indent(indent_, o_);
-          o_ << "{" << EOL;
-          generate_local_var_decls(x.local_decl_, indent_, o_);
+          o_ << "# {" << EOL;
+          for (int i=0; i < x.local_decl_.size(); i++){
+            generate_var_init_python(x.local_decl_[i], indent_, o_);
+          }
+          //generate_local_var_decls(x.local_decl_, indent_, o_);
         }
-        o_ << EOL;*/
+        o_ << EOL;
         for (size_t i = 0; i < x.statements_.size(); ++i) {
           pyro_statement(x.statements_[i], p_, indent_, o_);
         }
-        /*if (has_local_vars) {
+        if (has_local_vars) {
           generate_indent(indent_, o_);
-          o_ << "}" << EOL;
-        }*/
+          o_ << "# }" << EOL;
+        }
       }
 
       void operator()(const print_statement& ps) const {
@@ -398,18 +388,12 @@ namespace stan {
 
       void operator()(const for_statement& x) const {
         generate_indent(indent_, o_);
-        std::stringstream tmp;
         o_ << "for " << x.variable_ << " in ";
         o_ << "range(";
-        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, tmp);
-        std::string tmp_str = tmp.str();
-        if (is_number(tmp_str)) {
-            int index = atoi(tmp_str.c_str());
-            o_ << index - 1 << ", ";
-        } else
-            o_ << tmp_str << " - 1, ";
+        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, o_);
+        o_ <<", ";
         pyro_generate_expression_as_index(x.range_.high_, NOT_USER_FACING, o_);
-        o_ <<"):" << EOL;
+        o_ <<" + 1):" << EOL;
         pyro_statement(x.statement_, p_, indent_ + 1, o_);
       }
 
@@ -490,7 +474,7 @@ namespace stan {
         generate_indent(indent, o);
         o << "current_statement_begin__ = " << s.begin_line_ << ";" << EOL;
       }*/
-
+      //std::cout<<"PYRO_STMT "<<s.begin_line_<<":"<<s.end_line_<<std::endl;
       pyro_statement_visgen vis(indent, o, p);
       boost::apply_visitor(vis, s.statement_);
     }

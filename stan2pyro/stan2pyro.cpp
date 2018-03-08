@@ -61,10 +61,12 @@ namespace stan {
         for (size_t n = 0; n < ai_size; ++n) {
           o << '[';
           pyro_generate_expression_as_index(indexes[n], user_facing, o);
-          o << ']';
+          o << " - 1]";
         }
       } else {
-        for (size_t n = 0; n < ai_size - 1; ++n)
+        std::cout<<"generate_pyro_indexed_expr cannot be computed in this case\n";
+        assert(false); //"generate_pyro_indexed_expr cannot be computed in this case");
+        /*for (size_t n = 0; n < ai_size - 1; ++n)
           o << (isLHS ? "get_base1_lhs(" : "get_base1(");
         o << expr;
         for (size_t n = 0; n < ai_size - 2; ++n) {
@@ -80,43 +82,35 @@ namespace stan {
         pyro_generate_expression_as_index(indexes[ai_size - 1U], user_facing, o);
         o << ',';
         generate_quoted_string(expr, o);
-        o << ',' << (ai_size - 1U) << ')';
+        o << ',' << (ai_size - 1U) << ')';*/
       }
     }
 
 
     struct pyro_init_visgen : public visgen {
       size_t indent_;
-      explicit pyro_init_visgen (size_t indent, std::ostream& o)
-        : visgen(o), indent_(indent) {  }
+      std::string var_name_;
+      explicit pyro_init_visgen (size_t indent, std::ostream& o, std::string var_name)
+        : visgen(o), indent_(indent), var_name_(var_name) {  }
 
       template <typename D>
       std::string function_args(const D& x) const {
         std::stringstream ss;
         if (has_lub(x)) {
-          pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
-          ss << get_dims_expand(x.dims_) << ",";
-          pyro_generate_expression(x.range_.high_.expr_, NOT_USER_FACING, ss);
-          ss << get_dims_expand(x.dims_);
+          ss<<", low=";
+          pyro_generate_expression_as_index(x.range_.low_.expr_, NOT_USER_FACING, ss);
+          ss << ", high=";
+          pyro_generate_expression_as_index(x.range_.high_.expr_, NOT_USER_FACING, ss);
         } else if (has_lb(x)) {
-          pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
-          ss << get_dims_expand(x.dims_);
-          ss<<", 1. +";
-          pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
-          ss << get_dims_expand(x.dims_);
+          ss<<", low=";
+          pyro_generate_expression_as_index(x.range_.low_.expr_, NOT_USER_FACING, ss);
         } else if (has_ub(x)) {
-          ss<<"-1. +";
-          pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
-          ss << get_dims_expand(x.dims_);
-          ss<<",";
-          pyro_generate_expression(x.range_.low_.expr_, NOT_USER_FACING, ss);
-          ss << get_dims_expand(x.dims_);
+          ss << ", high=";
+          pyro_generate_expression_as_index(x.range_.high_.expr_, NOT_USER_FACING, ss);
         } else {
-          ss << "to_variable(-2.)"<<get_dims_expand(x.dims_);
-          ss<<",";
-          ss<<" to_variable(2.)"<<get_dims_expand(x.dims_);
+          ss<<"";
         }
-        return ss.str();
+        return ss.str() + get_dims_expand(x.dims_);
       }
 
       std::string get_dims_expand(const std::vector<expression>& dims) const {
@@ -132,13 +126,12 @@ namespace stan {
                 ss<< ", ";
         }
         ss<<")";
-        return ".expand(" + ss.str() + ")";
+        return ", dims=" +ss.str();
       }
 
       void operator()(const double_var_decl& x) const {
         int n_dims = x.dims_.size();
-
-        o_<<"dist.Uniform("<<function_args(x)<<").sample() # real/double";
+        o_<<"init_real_and_cache(\""<< var_name_ <<"\""<<function_args(x)<<") # real/double";
         o_<<std::endl;
       }
       void operator()(const nil& /*x*/) const { }  // dummy
@@ -192,20 +185,34 @@ namespace stan {
       }
     };
 
-
+    void generate_var_init_python(var_decl v, int indent, std::ostream& o){
+        std::string var_name = v.name();
+        stan::lang::generate_indent(indent, o);
+        o << var_name << " = ";
+        // TODO: for each dimension expression, output that expression
+        int n_dims = v.dims().size();
+        if (n_dims == 0) o<< "0.\n";
+        else o<< "torch.zeros(";
+        for(int kk=0; kk<n_dims; kk++){
+            stan::lang::pyro_generate_expression(v.dims()[kk], NOT_USER_FACING, o);
+            if (kk != n_dims-1) o<<",";
+            else o<<")\n";
+        }
+    }
   }
 }
 
 void extract_data(const std::vector<stan::lang::var_decl> data,
                   const std::pair<std::vector<stan::lang::var_decl>,
                                   std::vector<stan::lang::statement> > derived_data,
-                  int n_td) {
+                  bool use_derived_data = true) {
+    int n_td = derived_data.first.size();
     for (int i = 0; i < data.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
         std::cout << data[i].name() <<  " = "<< "data[\"" << data[i].name() << "\"]\n";
     }
 
-    if (n_td > 0) {
+    if (n_td > 0 && use_derived_data) {
         for(int j=0; j<n_td; j++){
             std::string var_name = derived_data.first[j].name();
             stan::lang::generate_indent(1, std::cout);
@@ -215,33 +222,18 @@ void extract_data(const std::vector<stan::lang::var_decl> data,
 }
 
 
+
+
 //TODO: write a visitor struct for statement_ similar to statement_visgen.hpp in /stan/lang/generator/
 void printer(const stan::lang::program &p) {
-    //int N = p.parameter_decl_.size(); //std::vector<var_decl>
-    //std::cout<<"PRINTING PROGRAM: "<<N<<std::endl;
-    //for(int i=0; i < N; i++){
-    //    std::cout<<"hello"<<std::endl;
-    //}
-    /*int n = p.parameter_decl_.size();
-    for (int i =0; i < n; i++){
-        var_decl vd = p.parameter_decl_[i];
-    }*/
+
     int n_td = p.derived_data_decl_.first.size();
     if (n_td > 0) {
         std::cout << "\ndef transformed_data(data):" << "\n";
+        extract_data(p.data_decl_, p.derived_data_decl_, false);
         for(int j=0; j<n_td; j++){
             std::string var_name = p.derived_data_decl_.first[j].name();
-            stan::lang::generate_indent(1, std::cout);
-            std::cout << var_name << " = ";
-            // TODO: for each dimension expression, output that expression
-            int n_dims = p.derived_data_decl_.first[j].dims().size();
-            if (n_dims == 0) std::cout<< "0." <<std::endl;
-            else std::cout<< "torch.zeros(";
-            for(int kk=0; kk<n_dims; kk++){
-                stan::lang::pyro_generate_expression(p.derived_data_decl_.first[j].dims()[kk], NOT_USER_FACING, std::cout);
-                if (kk != n_dims-1) std::cout<<",";
-                else std::cout<<")\n";
-            }
+            stan::lang::generate_var_init_python((p.derived_data_decl_.first[j]), 1, std::cout);
             pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
             stan::lang::generate_indent(1, std::cout);
             std::cout << "data[\"" << var_name << "\"] = ";
@@ -249,17 +241,18 @@ void printer(const stan::lang::program &p) {
         }
     }
     std::cout << "\ndef init_params(data, params):" << "\n";
-    extract_data(p.data_decl_, p.derived_data_decl_, n_td);
+    extract_data(p.data_decl_, p.derived_data_decl_, false);
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
-        std::cout << "params[\"" << p.parameter_decl_[i].name() << "\"] = ";
+        std::string var_name = p.parameter_decl_[i].name();
+        std::cout << "params[\"" << var_name << "\"] = ";
         stan::lang::var_decl x = p.parameter_decl_[i];
-        // TODO: use init_visgen
-        stan::lang::pyro_init_visgen  iv(0,std::cout);
+        stan::lang::pyro_init_visgen  iv(0,std::cout,var_name);
         boost::apply_visitor(iv, p.parameter_decl_[i].decl_);
     }
     std::cout << "\ndef model(data, params):" << "\n";
-    extract_data(p.data_decl_, p.derived_data_decl_, n_td);
+    extract_data(p.data_decl_, p.derived_data_decl_);
+
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
         std::cout << p.parameter_decl_[i].name() <<  " = params[\"" << p.parameter_decl_[i].name() << "\"]\n";

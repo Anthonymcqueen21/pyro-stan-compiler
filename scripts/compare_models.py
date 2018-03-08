@@ -1,5 +1,5 @@
-from utils import load_data, import_by_string, exists_p, load_p, to_float, \
-    save_p, do_pyro_compatibility_hacks, mk_module, tensorize_data, variablize_params
+from utils import load_data, import_by_string, exists_p, load_p, to_float, save_p, \
+    do_pyro_compatibility_hacks, mk_module, tensorize_data, variablize_params, reset_initialization_cache
 import pystan
 import numpy as np
 import pyro.poutine as poutine
@@ -107,6 +107,7 @@ def process_files(pfile, dfiles, sfile):
 
 
 def compare_models(code, datas, init_params, model, transformed_data, n_samples=1, model_cache=None):
+    reset_initialization_cache()
     lp_vals = []
     for data in datas:
         params ={}

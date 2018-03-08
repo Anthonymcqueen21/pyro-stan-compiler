@@ -8,13 +8,84 @@ from torch.autograd import Variable
 import numpy as np
 import pyro.distributions as pdist
 from os.path import join
+import pyro
 
+def _call_func(fname, args):
+    if fname.startswith("stan::math::"):
+        fname=fname.split("stan::math::")[1]
+
+    if len(args) == 1:
+        x = args[0]
+        if fname == "sqrt":
+            return torch.sqrt(x)
+    elif len(args) == 3:
+        [x, y, z] = args
+        if fname == "fma":
+            return x*y+z
+    else:
+        torch_funmap = {
+            "fmin" : "min",
+            "fmax" : "max",
+        }
+        if fname in torch_funmap:
+            fname = torch_funmap[fname]
+        try:
+            return getattr(torch,fname)(*args)
+        except:
+            assert False, "Cannot handle function=%s(%s)" % (fname,args)
 def fma(x,y,z):
     return x*y+z
 
 EPSILON = 1e-7
 
 cache_init = {}
+
+
+def sanitize_module_loading_file(pfile):
+    if pfile.endswith(".py"):
+        pfile = pfile[:-3]
+    pfile = pfile.replace("/", ".")
+    pfile = pfile.strip(".")
+    return pfile
+
+def generate_pyro_file(mfile, pfile):
+    with open(pfile, "w") as f:
+        f.write("from utils import to_variable, to_float, init_real_and_cache, _pyro_sample, _call_func\n")
+        f.write("import torch\nimport pyro\n")
+
+    os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
+
+def get_fns_pyro(pfile):
+    pfile = sanitize_module_loading_file(pfile)
+    mk_module(pfile)
+    model = import_by_string(pfile + ".model")
+    assert model is not None, "model couldn't be imported"
+    transformed_data = import_by_string(pfile + ".transformed_data")
+    init_params = import_by_string(pfile + ".init_params")
+    return init_params, model, transformed_data
+
+def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
+    if dist_kwargs is None:
+        dist_kwargs = {}
+    reshaped_dist_args = []
+    if dist_name.startswith("logit_"):
+        dist_part = dist_name.split("_")[1]
+        assert dist_part in ["bernoulli", "categorical"], "logits allowed in bernoulli and categorical only"
+        dist_name = dist_part.capitalize()
+        assert len(dist_args) == 1
+        dist_kwargs["logit"] = dist_args[0]
+        dist_args = []
+    else:
+        dist_name = dist_name.capitalize()
+
+    try:
+        dist_class = getattr(dist, dist_name)
+    except:
+        assert False, "dist_name=%s is invalid" % dist_name
+    reshaped_dist_args = [arg.expand_as(lhs) for arg in dist_args]
+    reshaped_dist_kwargs = {k: dist_kwargs[k].expand_as(lhs) for k in dist_kwargs}
+    return pyro.sample(name, dist_class(*reshaped_dist_args, **reshaped_dist_kwargs), obs=obs)
+
 
 
 def tensorize_data(data):
@@ -71,6 +142,9 @@ class DIST(dict):
             else:
                 raise
 dist = DIST()
+
+def reset_initialization_cache():
+    cache_init = {}
 
 def init_real_and_cache(name, low=None, high=None, dims=(1)):
     if name in cache_init:

@@ -276,6 +276,12 @@ namespace stan {
           return;
         }
 //         o_ << fx.name_ << '(';
+        std::string fn_name = fx_name;
+        if (split.size() > 1) fn_name= split[split.size() - 1];
+
+        o_<< "_call_func(\""<<fn_name<<"\", [";
+
+        /*
         if (split.size() > 1) {
             std::string fn_name = split[split.size() - 1];
             fn_name = fn_name == "fma" ? "addmm" : fn_name;
@@ -285,6 +291,8 @@ namespace stan {
             o_ << "torch." << fn_name << '(';
         }
         else o_ << fx_name << '(';
+        */
+
         for (size_t i = 0; i < fx.args_.size(); ++i) {
           if (i > 0) o_ << ',';
           boost::apply_visitor(*this, fx.args_[i].expr_);
@@ -303,7 +311,7 @@ namespace stan {
             o_ << ", ";
           o_ << "pstream__";
         }
-        o_ << ')';
+        o_ << "])";
       }
 
       void operator()(const conditional_op& expr) const {
