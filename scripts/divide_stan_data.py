@@ -48,6 +48,8 @@ def get_arrays_to_divide(n, jdata, val):
                     break
             if dim1 == val:
                 to_divide_ixs.append(j)
+    if to_divide_ixs is None or len(to_divide_ixs) == 0:
+        return None
     return to_divide_ixs
 
 def print_shape(jdata):

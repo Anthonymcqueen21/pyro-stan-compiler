@@ -4,6 +4,7 @@ import pystan
 import numpy as np
 import pyro.poutine as poutine
 from pdb import set_trace as bb
+import copy
 #TODO: init_values is a dictionary mapping variable name to values/floats
 
 def run_stan(data, code, init_values, n_samples, model_cache=None):
@@ -47,10 +48,9 @@ def run_pyro(site_values, data, model, transformed_data, n_samples, params):
     # import model, transformed_data functions (if exists) from pyro module
 
     assert model is not None, "model couldn't be imported"
-    if transformed_data is not None:
-        transformed_data(data)
 
-    tensorize_data(data)
+
+
     variablize_params(params)
 
     log_pdfs = []
@@ -111,13 +111,26 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
     lp_vals = []
     for data in datas:
         params ={}
-        init_params(data, params)
+        copy_data = copy.deepcopy(data)
+
+        tensorize_data(data)
+        if transformed_data is not None:
+            try:
+                transformed_data(data)
+            except KeyError:
+                return 8
+            except:
+                raise
+        try:
+            init_params(data, params)
+        except KeyError:
+            return 9
 
         init_values = {k: params[k].data.cpu().numpy().tolist() for k in params}
         init_values = {k: (init_values[k][0]) if len(init_values[k])==1 else np.array(init_values[k]) for k in init_values}
 
         #print(init_values)
-        site_values, s_log_probs = run_stan(data, code, init_values, n_samples, model_cache)
+        site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples, model_cache)
         p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
 
         p_avg = (np.mean(p_log_probs))/n_log_probs
@@ -128,10 +141,13 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
     diffs = list(map(lambda x: x[0]-x[1], lp_vals))
     diff0 = diffs[0]
     for diff_v in diffs:
-        assert abs(diff_v-diff0) < 1e-2, "%s // %s" % (lp_vals, diffs)
+
+        if abs(diff_v-diff0) >= 1e-2:
+            print("Log probs don't match with EPS=1e-2! %s // %s" % (lp_vals, diffs))
+            return False
         #print(abs(diff_v-diff0))
     print("Log probs match with a constant difference pyro-stan of approx. %0.3f" % diff0)
-
+    return True
 
 if __name__ == "__main__":
     import argparse

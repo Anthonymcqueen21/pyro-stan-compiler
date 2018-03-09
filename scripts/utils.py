@@ -9,16 +9,26 @@ import numpy as np
 import pyro.distributions as pdist
 from os.path import join
 import pyro
+from pdb import set_trace as bb
+
+def _index_select(arr, ix):
+    if isinstance(ix, int):
+        return arr[ix]
+    elif isinstance(ix,torch.Tensor):
+        if len(ix.shape) == 0:
+            assert float(ix) == int(ix), "ix should be interger"
+            return arr[int(ix)]
+        else:
+            assert isinstance(arr, torch.Tensor)
+            return torch.index_select(arr, 0, ix)
+    else:
+        assert False, "invalid index selection"
 
 def _call_func(fname, args):
     if fname.startswith("stan::math::"):
         fname=fname.split("stan::math::")[1]
 
-    if len(args) == 1:
-        x = args[0]
-        if fname == "sqrt":
-            return torch.sqrt(x)
-    elif len(args) == 3:
+    if len(args) == 3:
         [x, y, z] = args
         if fname == "fma":
             return x*y+z
@@ -26,13 +36,18 @@ def _call_func(fname, args):
         torch_funmap = {
             "fmin" : "min",
             "fmax" : "max",
+            "multiply" : "mul",
+            "elt_multiply" : "mul",
+            "subtract" : "sub"
         }
+
         if fname in torch_funmap:
             fname = torch_funmap[fname]
         try:
             return getattr(torch,fname)(*args)
         except:
             assert False, "Cannot handle function=%s(%s)" % (fname,args)
+
 def fma(x,y,z):
     return x*y+z
 
@@ -50,7 +65,9 @@ def sanitize_module_loading_file(pfile):
 
 def generate_pyro_file(mfile, pfile):
     with open(pfile, "w") as f:
+        f.write("# model file: %s\n" % mfile)
         f.write("from utils import to_variable, to_float, init_real_and_cache, _pyro_sample, _call_func\n")
+        f.write("from utils import init_vector_and_cache, _index_select\n")
         f.write("import torch\nimport pyro\n")
 
     os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
@@ -59,7 +76,7 @@ def get_fns_pyro(pfile):
     pfile = sanitize_module_loading_file(pfile)
     mk_module(pfile)
     model = import_by_string(pfile + ".model")
-    assert model is not None, "model couldn't be imported"
+    #assert model is not None, "model couldn't be imported"
     transformed_data = import_by_string(pfile + ".transformed_data")
     init_params = import_by_string(pfile + ".init_params")
     return init_params, model, transformed_data
@@ -68,12 +85,12 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
     if dist_kwargs is None:
         dist_kwargs = {}
     reshaped_dist_args = []
-    if dist_name.startswith("logit_"):
-        dist_part = dist_name.split("_")[1]
+    if dist_name.endswith("_logit"):
+        dist_part = dist_name.split("_")[0]
         assert dist_part in ["bernoulli", "categorical"], "logits allowed in bernoulli and categorical only"
         dist_name = dist_part.capitalize()
         assert len(dist_args) == 1
-        dist_kwargs["logit"] = dist_args[0]
+        dist_kwargs["logits"] = dist_args[0]
         dist_args = []
     else:
         dist_name = dist_name.capitalize()
@@ -144,10 +161,20 @@ class DIST(dict):
 dist = DIST()
 
 def reset_initialization_cache():
+    global cache_init
     cache_init = {}
+
+def init_vector_and_cache(name,  low=None, high=None, dims=None):
+    assert dims is not None, "dims cannot be empty for a vector"
+    return init_real_and_cache(name, low=low, high=high, dims=dims)
 
 def init_real_and_cache(name, low=None, high=None, dims=(1)):
     if name in cache_init:
+        assert cache_init[name] is not None
+        dims_lst = [dims] if isinstance(dims, int) else list(dims)
+        assert len(dims_lst) == len(cache_init[name].shape)
+        for i in range(len(dims_lst)):
+            assert cache_init[name].shape[i] == dims_lst[i], "shape mismatch!"
         return cache_init[name]
     if low is None:
         low = -2.
@@ -157,7 +184,8 @@ def init_real_and_cache(name, low=None, high=None, dims=(1)):
         high = 2.
         if low >= high:
             high = low + 1.
-    cache_init[name] = dist.Uniform(to_variable(low).expand(dims), to_variable(high).expand(dims))()
+    cache_init[name] = dist.Uniform(to_variable(low).expand(dims), to_variable(high).expand(dims)).sample()
+    assert cache_init[name] is not None
     return cache_init[name]
 
 def import_by_string(full_name):

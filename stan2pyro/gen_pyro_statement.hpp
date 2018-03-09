@@ -271,11 +271,11 @@ namespace stan {
 
       void operator()(const sample& x) const {
         std::string prob_fun = get_prob_fun(x.dist_.family_);
-
+        /*
         // PYRO_ADDED: identifying all transformed paramters expressions in the arguments of sampled
         // distributions and calling the relevant statement before using the variable
         // go over all argument expressions
-        for (size_t i = 0; i < x.dist_.args_.size(); ++i) {;
+        for (size_t i = 0; i < x.dist_.args_.size(); ++i) {
           int n_tp = p_.derived_decl_.first.size();
           // compare each argument expression with variables in transformed parameters
           for(int j=0;j<n_tp; j++){
@@ -284,13 +284,13 @@ namespace stan {
             if (expr_str == var_name){
                 // if they match generate the statement
                 //o_<< indent_ <<
-
+                // TODO: what if this transformed param reuqires another transformed param? example: radon_group_chr
                 pyro_statement(p_.derived_decl_.second[j], p_, indent_, o_);
                 break;
             }
           }
           // pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
-        }
+        }*/
 
         generate_indent(indent_, o_);
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
@@ -301,12 +301,12 @@ namespace stan {
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         o_<<"\", \"";
         std::string dist = x.dist_.family_;
-        o_<<dist<<"\", (";
+        o_<<dist<<"\", [";
         for (size_t i = 0; i < x.dist_.args_.size(); ++i) {;
           if (i != 0) o_ << ", ";
           pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
         }
-        o_ << ")";
+        o_ << "]";
         generate_observe(x.expr_);
         o_ << ")" << EOL;
 
@@ -468,12 +468,14 @@ namespace stan {
     };
 
     void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o) {
-      /*
-      is_numbered_statement_vis vis_is_numbered;
-      if (boost::apply_visitor(vis_is_numbered, s.statement_)) {
-        generate_indent(indent, o);
-        o << "current_statement_begin__ = " << s.begin_line_ << ";" << EOL;
-      }*/
+
+      if(false){
+          is_numbered_statement_vis vis_is_numbered;
+          if (boost::apply_visitor(vis_is_numbered, s.statement_)) {
+            generate_indent(indent, o);
+            o << "# current_statement_begin__ = " << s.begin_line_ << ";" << EOL;
+          }
+      }
       //std::cout<<"PYRO_STMT "<<s.begin_line_<<":"<<s.end_line_<<std::endl;
       pyro_statement_visgen vis(indent, o, p);
       boost::apply_visitor(vis, s.statement_);

@@ -61,27 +61,45 @@ def test3():
 
 def test_generic(dfile, mfile, pfile, n_samples, model_cache):
     generate_pyro_file(mfile, pfile)
-    jfile = "./test/model_3.data.json"
+    jfile = "%s.json" %pfile
 
     if not os.path.exists(jfile):
         os.system("Rscript --vanilla convert_data.R %s %s" % (dfile, jfile))
     if not os.path.exists(jfile):
-        assert False, "R data to json conversion failed"
+        print("R data to json conversion failed")
+        return 1
     with open(jfile, "r") as fj:
         file_data = json.load(fj)
     b, jd1, jd2 = divide_json_data(file_data)
-    assert b, "could not divide json data"
+    if not b:
+        print("Could not divide json data")
+        return 2
     datas = [json_file_to_mem_format(jd1), json_file_to_mem_format(jd2)]
 
     init_params, model, transformed_data = get_fns_pyro(pfile)
+
+    if model is None:
+        return 3
+    if init_params is None:
+        return 4
+    #if transformed_data is None:
+    #    return 5
 
     with open(mfile, "r") as f:
         code = f.read()
     # TODO: remember to coordinate this with Pyro dist = DIST() object in units.py
     code = do_pyro_compatibility_hacks(code)
+    if "increment_log_prob" in code:
+        return 7
 
-    compare_models(code, datas, init_params, model, transformed_data,
+    matched = compare_models(code, datas, init_params, model, transformed_data,
                    n_samples=n_samples, model_cache=model_cache)
+    if matched == True:
+        return 0
+    elif int(matched) >= 8:
+        return matched
+    else:
+        return 6
 
 def test2():
     n_samples=1
