@@ -35,7 +35,7 @@ def get_arrays_to_divide(n, jdata, val):
     for j in range(n):
         if isinstance(jdata[1][j], collections.Iterable):
             dim1 = len(jdata[1][j])
-
+            assert not isinstance(jdata[1][j], dict), "variable values in data.R file are nested dictionaries!"
             if isinstance(jdata[1][j][0], collections.Iterable):
                 dim2 = len(jdata[1][j][0])
                 if dim2 == dim1:
@@ -76,6 +76,8 @@ def write_to_folder(ofolder, jd1, jd2, dfile):
 
 
 def divide_json_data(jdata):
+    if isinstance(jdata[0], unicode) or isinstance(jdata[0], str):
+        jdata[0] = [jdata[0]]
     n = len(jdata[0])
     assert len(jdata) == 2 and len(jdata[1]) == n
 

@@ -59,6 +59,50 @@ def test3():
     pfile = "./test/model_3_autogen.py"
     test_generic(dfile, mfile, pfile, n_samples, model_cache)
 
+from utils import exists_p, load_p, save_p
+import pystan
+import multiprocessing
+
+def cache_model(args):
+    (i,pfile,mfile, model_cache) = args
+    idd = "%d - %s" % (i, pfile)
+    with open(mfile, "r") as f:
+        code = f.read()
+    # TODO: remember to coordinate this with Pyro dist = DIST() object in units.py
+    code = do_pyro_compatibility_hacks(code)
+    if "increment_log_prob" in code:
+        msg = ("T %s: has increment_log_prob" % idd)
+        return msg, 2
+    assert model_cache is not None
+    if exists_p(model_cache):
+        msg = ("T %s: exists" % idd)
+        return msg, 1
+    else:
+        try:
+            sm = pystan.StanModel(model_code=code)
+        except ValueError:
+            msg = ("T %s: error in compilation" % idd)
+            return msg, 3
+        except:
+            raise
+        save_p(sm, model_cache)
+        msg = ("T %s: saved" % idd)
+        return msg, 0
+
+def cache_all_models(args):
+    i=0
+    argss = []
+    for (dfile, mfile, pfile, model_cache) in args:
+        #print("processing #%d" %i)
+        i+=1
+        argss.append((i,pfile,mfile, model_cache))
+
+    p = multiprocessing.Pool(27)
+    results = p.map(cache_model, argss)
+    for k in range(4):
+        n = len(filter(lambda x: x[1] == k, results))
+        print("%d : %d" % (k, n))
+
 def test_generic(dfile, mfile, pfile, n_samples, model_cache):
     generate_pyro_file(mfile, pfile)
     jfile = "%s.json" %pfile
@@ -70,7 +114,12 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
         return 1
     with open(jfile, "r") as fj:
         file_data = json.load(fj)
-    b, jd1, jd2 = divide_json_data(file_data)
+    try:
+        b, jd1, jd2 = divide_json_data(file_data)
+    except AssertionError, e:
+        if "variable values in data.R file are nested dictionaries!" in str(e):
+            return 14
+
     if not b:
         print("Could not divide json data")
         return 2

@@ -9,6 +9,7 @@ import numpy as np
 import pyro.distributions as pdist
 from os.path import join
 import pyro
+import math
 from pdb import set_trace as bb
 
 def _index_select(arr, ix):
@@ -25,6 +26,7 @@ def _index_select(arr, ix):
         assert False, "invalid index selection"
 
 def _call_func(fname, args):
+    kwargs ={}
     if fname.startswith("stan::math::"):
         fname=fname.split("stan::math::")[1]
 
@@ -32,21 +34,35 @@ def _call_func(fname, args):
         [x, y, z] = args
         if fname == "fma":
             return x*y+z
-    else:
-        torch_funmap = {
-            "fmin" : "min",
-            "fmax" : "max",
-            "multiply" : "mul",
-            "elt_multiply" : "mul",
-            "subtract" : "sub"
-        }
 
-        if fname in torch_funmap:
-            fname = torch_funmap[fname]
-        try:
-            return getattr(torch,fname)(*args)
-        except:
-            assert False, "Cannot handle function=%s(%s)" % (fname,args)
+    if len(args) == 1:
+        [x] = args
+        if fname == "log10":
+            return torch.log(x) / math.log(10.)
+
+    torch_funmap = {
+        "fmin" : "min",
+        "fmax" : "max",
+        "multiply" : "mul",
+        "elt_multiply" : "mul",
+        "subtract" : "sub",
+        "fabs" : "abs",
+        "sd" : "std",
+        "divide" : "div",
+        "elt_divide": "div",
+
+    }
+
+    if fname in torch_funmap:
+        fname = torch_funmap[fname]
+        if fname == "sd":
+            kwargs["unbiased"] = False
+
+    try:
+        args = list(map(lambda x: to_variable(x), args))
+        return getattr(torch,fname)(*args, **kwargs)
+    except:
+        assert False, "Cannot handle function=%s(%s,%s)" % (fname,args,kwargs)
 
 def fma(x,y,z):
     return x*y+z
@@ -87,7 +103,7 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
     reshaped_dist_args = []
     if dist_name.endswith("_logit"):
         dist_part = dist_name.split("_")[0]
-        assert dist_part in ["bernoulli", "categorical"], "logits allowed in bernoulli and categorical only"
+        assert dist_part in ["bernoulli", "categorical"], "logits allowed in bernoulli, categorical only"
         dist_name = dist_part.capitalize()
         assert len(dist_args) == 1
         dist_kwargs["logits"] = dist_args[0]

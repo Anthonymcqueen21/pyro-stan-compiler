@@ -130,9 +130,26 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
         init_values = {k: (init_values[k][0]) if len(init_values[k])==1 else np.array(init_values[k]) for k in init_values}
 
         #print(init_values)
-        site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples, model_cache)
-        p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
-
+        try:
+            site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples, model_cache)
+        except RuntimeError, e:
+            if "mismatch" in str(e) and "dimension" in str(e) and  "declared and found in context" in str(e):
+                return 10
+            if "accessing element out of range" in str(e):
+                return 13
+            #print(e)
+            raise
+        try:
+            p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
+        except AssertionError, e:
+            #print(e)
+            if "dist_name=" in str(e) and "is invalid" in str(e):
+                return 11
+            if "logits allowed in bernoulli, categorical only" in str(e):
+                return 11
+            if "Cannot handle function" in str(e):
+                return 12
+            raise
         p_avg = (np.mean(p_log_probs))/n_log_probs
         s_avg = (np.mean(s_log_probs))/n_log_probs
         lp_vals.append((p_avg, s_avg))
