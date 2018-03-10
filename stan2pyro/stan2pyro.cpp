@@ -135,7 +135,7 @@ namespace stan {
             return "";
         }
         for (int i=0;i<n_dims;i++){
-            pyro_generate_expression(dims[i], NOT_USER_FACING, ss);
+            pyro_generate_expression_as_index(dims[i], NOT_USER_FACING, ss);
             if (i !=n_dims-1)
                 ss<< ", ";
         }
