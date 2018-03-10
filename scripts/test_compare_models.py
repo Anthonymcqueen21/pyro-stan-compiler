@@ -119,6 +119,7 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
     except AssertionError, e:
         if "variable values in data.R file are nested dictionaries!" in str(e):
             return 14
+        raise
 
     if not b:
         print("Could not divide json data")

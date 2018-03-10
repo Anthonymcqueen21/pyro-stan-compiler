@@ -57,7 +57,7 @@ namespace stan {
         o << expr;
         return;
       }
-      if (ai_size <= (e_num_dims + 1) || !base_type.is_matrix_type()) {
+      //if (ai_size <= (e_num_dims + 1) || !base_type.is_matrix_type()) {
 
         std::string curr_str = expr;
         if (isLHS) o << expr;
@@ -75,10 +75,12 @@ namespace stan {
           //o << " - 1]";
         }
         if (!isLHS) o << curr_str;
-      } else {
-        std::cout<<"generate_pyro_indexed_expr cannot be computed in this case\n";
-        assert(false); //"generate_pyro_indexed_expr cannot be computed in this case");
-        /*for (size_t n = 0; n < ai_size - 1; ++n)
+      //}
+      /*else {
+        //std::cout<<"generate_pyro_indexed_expr cannot be computed in this case ai_size="<<ai_size;
+        //std::cout<<" e_num_dims="<<e_num_dims << "\n";
+        //assert(false); //"generate_pyro_indexed_expr cannot be computed in this case");
+        for (size_t n = 0; n < ai_size - 1; ++n)
           o << (isLHS ? "get_base1_lhs(" : "get_base1(");
         o << expr;
         for (size_t n = 0; n < ai_size - 2; ++n) {
@@ -94,8 +96,8 @@ namespace stan {
         pyro_generate_expression_as_index(indexes[ai_size - 1U], user_facing, o);
         o << ',';
         generate_quoted_string(expr, o);
-        o << ',' << (ai_size - 1U) << ')';*/
-      }
+        o << ',' << (ai_size - 1U) << ')';
+      }*/
     }
 
 
@@ -164,7 +166,12 @@ namespace stan {
       }
 
       void operator()(const matrix_var_decl& x) const {
-        assert (false);
+        o_<<"init_matrix_and_cache(\""<< var_name_ <<"\""<<function_args(x)<<", dims=(";
+        pyro_generate_expression_as_index(x.M_, NOT_USER_FACING, o_);
+        o_<<", ";
+        pyro_generate_expression_as_index(x.N_, NOT_USER_FACING, o_);
+        o_<<")) # matrix";
+        o_<<std::endl;
       }
 
       void operator()(const unit_vector_var_decl& x) const {
@@ -209,6 +216,15 @@ namespace stan {
             // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
             o<< "torch.zeros(";
             stan::lang::pyro_generate_expression_as_index(vec_v->M_, NOT_USER_FACING, o);
+            o<<")\n";
+            return;
+        }
+        if ( matrix_var_decl* vec_v = boost::get<matrix_var_decl>( &(v.decl_) ) ){
+            // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
+            o<< "torch.zeros(";
+            stan::lang::pyro_generate_expression_as_index(vec_v->M_, NOT_USER_FACING, o);
+            o <<", ";
+            stan::lang::pyro_generate_expression_as_index(vec_v->N_, NOT_USER_FACING, o);
             o<<")\n";
             return;
         }
@@ -277,14 +293,19 @@ void printer(const stan::lang::program &p) {
 
     int n_td = p.derived_data_decl_.first.size();
     int n_td_s = p.derived_data_decl_.second.size();
-    assert (n_td == n_td_s);
+
     if (n_td > 0) {
         std::cout << "\ndef transformed_data(data):" << "\n";
         stan::lang::extract_data(p, false);
         for(int j=0; j<n_td; j++){
             std::string var_name = p.derived_data_decl_.first[j].name();
             stan::lang::generate_var_init_python((p.derived_data_decl_.first[j]), 1, std::cout);
+        }
+        for(int j=0; j<n_td_s; j++){
             stan::lang::pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
+        }
+        for(int j=0; j<n_td; j++){
+            std::string var_name = p.derived_data_decl_.first[j].name();
             stan::lang::generate_indent(1, std::cout);
             std::cout << "data[\"" << var_name << "\"] = ";
             std::cout << var_name << "\n";

@@ -271,35 +271,48 @@ namespace stan {
 
       void operator()(const sample& x) const {
         std::string prob_fun = get_prob_fun(x.dist_.family_);
-        /*
-        // PYRO_ADDED: identifying all transformed paramters expressions in the arguments of sampled
-        // distributions and calling the relevant statement before using the variable
-        // go over all argument expressions
-        for (size_t i = 0; i < x.dist_.args_.size(); ++i) {
-          int n_tp = p_.derived_decl_.first.size();
-          // compare each argument expression with variables in transformed parameters
-          for(int j=0;j<n_tp; j++){
-            std::string var_name = p_.derived_decl_.first[j].name();
-            std::string expr_str = pyro_generate_expression_string(x.dist_.args_[i], NOT_USER_FACING);
-            if (expr_str == var_name){
-                // if they match generate the statement
-                //o_<< indent_ <<
-                // TODO: what if this transformed param reuqires another transformed param? example: radon_group_chr
-                pyro_statement(p_.derived_decl_.second[j], p_, indent_, o_);
-                break;
-            }
-          }
-          // pyro_generate_expression(x.dist_.args_[i], NOT_USER_FACING, o_);
-        }*/
 
         generate_indent(indent_, o_);
-        pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+
+        // since this is LHS -- using index based method makes sure that isLHS is set to True when calling
+        // generate_expression for index_ops inside this
+        std::stringstream ss;
+        pyro_generate_expression_as_index(x.expr_, NOT_USER_FACING, ss);
+        std::string lhs = ss.str();
+        o_ <<lhs;
+        if ( const index_op* ix_op = boost::get<index_op>( &(x.expr_.expr_) ) ){
+            // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
+            std::stringstream expr_o;
+            pyro_generate_expression(ix_op->expr_, NOT_USER_FACING, expr_o);
+            std::string expr_string = "\"" + expr_o.str();
+
+
+            std::vector<std::string> indexes;
+            for (size_t i = 0; i < ix_op->dimss_.size(); ++i){
+              for (size_t j = 0; j < ix_op->dimss_[i].size(); ++j){
+                std::stringstream ssi;
+                pyro_generate_expression_as_index(ix_op->dimss_[i][j], NOT_USER_FACING, ssi);
+                indexes.push_back(ssi.str());
+                expr_string = expr_string + "[%d]";
+              }
+            }
+            expr_string = expr_string + "\" % (";
+            for (int ii=0; ii< indexes.size(); ii++){
+                expr_string = expr_string + "to_int(" + indexes[ii] + "-1)";
+                if(ii < indexes.size() - 1) expr_string = expr_string + ",";
+                else expr_string = expr_string + ")";
+            }
+            lhs = expr_string;
+        }
+        else lhs = "\"" + lhs + "\"";
+
         o_ << " = _pyro_sample(";
         //o_ << "lp_accum__.add(" << prob_fun << "<propto__>(";
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
-        o_ << ", \"";
-        pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
-        o_<<"\", \"";
+        o_ << ", ";
+        o_<<lhs;
+        //pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
+        o_<<", \"";
         std::string dist = x.dist_.family_;
         o_<<dist<<"\", [";
         for (size_t i = 0; i < x.dist_.args_.size(); ++i) {;

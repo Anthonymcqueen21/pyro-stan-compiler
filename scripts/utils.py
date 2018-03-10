@@ -50,7 +50,7 @@ def _call_func(fname, args):
         "sd" : "std",
         "divide" : "div",
         "elt_divide": "div",
-
+        "logical_eq" : "eq",
     }
 
     if fname in torch_funmap:
@@ -83,7 +83,7 @@ def generate_pyro_file(mfile, pfile):
     with open(pfile, "w") as f:
         f.write("# model file: %s\n" % mfile)
         f.write("from utils import to_variable, to_float, init_real_and_cache, _pyro_sample, _call_func\n")
-        f.write("from utils import init_vector_and_cache, _index_select\n")
+        f.write("from utils import init_vector_and_cache, _index_select, init_matrix_and_cache, to_int\n")
         f.write("import torch\nimport pyro\n")
 
     os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
@@ -115,6 +115,9 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
         dist_class = getattr(dist, dist_name)
     except:
         assert False, "dist_name=%s is invalid" % dist_name
+
+    if len(lhs.shape) == 0:
+        lhs = lhs.expand((1))
     reshaped_dist_args = [arg.expand_as(lhs) for arg in dist_args]
     reshaped_dist_kwargs = {k: dist_kwargs[k].expand_as(lhs) for k in dist_kwargs}
     return pyro.sample(name, dist_class(*reshaped_dist_args, **reshaped_dist_kwargs), obs=obs)
@@ -180,6 +183,11 @@ def reset_initialization_cache():
     global cache_init
     cache_init = {}
 
+def init_matrix_and_cache(name,  low=None, high=None, dims=None):
+    assert dims is not None, "dims cannot be empty for a matrix"
+    return init_real_and_cache(name, low=low, high=high, dims=dims)
+
+
 def init_vector_and_cache(name,  low=None, high=None, dims=None):
     assert dims is not None, "dims cannot be empty for a vector"
     return init_real_and_cache(name, low=low, high=high, dims=dims)
@@ -233,6 +241,11 @@ def mkdir_p(path):
             pass
         else:
             raise
+
+def to_int(x):
+    fx = to_float(x)
+    assert int(fx) == fx, "value was a float but not int!"
+    return int(fx)
 
 def to_float(x):
     if isinstance(x, torch.Tensor):

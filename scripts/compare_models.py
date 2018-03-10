@@ -62,6 +62,8 @@ def run_pyro(site_values, data, model, transformed_data, n_samples, params):
             sample_site_values = {v: float(site_values[v]) if site_values[v].shape == () else site_values[v][0] for v in
                       site_values}
         #print(sample_site_values)
+        process_2d_sites(sample_site_values)
+
         variablize_params(sample_site_values)
 
         model_trace = poutine.trace(poutine.condition(model, data=sample_site_values),
@@ -106,6 +108,25 @@ def process_files(pfile, dfiles, sfile):
     return code, datas, init_params, model, transformed_data
 
 
+def process_2d_sites(svs):
+    to_delete = []
+    n_svs = {}
+    for k in svs:
+        tmp = np.array(svs[k])
+        ns = len(tmp.shape)
+        assert ns in [0,1,2], "other dimensions of arrays not allowed"
+        if ns == 2:
+            to_delete.append(k)
+            for i in range(tmp.shape[0]):
+                n_svs["%s[%d]" % (k,i)] = svs[k][i]
+                for j in range(tmp.shape[1]):
+                    n_svs["%s[%d][%d]" % (k, i, j)] = svs[k][i][j]
+    #for k in to_delete:
+    #    print("PYRO RUN: deleting sample site: %s shape=%s" %(k, np.array(svs[k]).shape))
+    #    del svs[k]
+    for k in n_svs:
+        svs[k] = n_svs[k]
+
 def compare_models(code, datas, init_params, model, transformed_data, n_samples=1, model_cache=None):
     reset_initialization_cache()
     lp_vals = []
@@ -139,6 +160,8 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
                 return 13
             #print(e)
             raise
+
+
         try:
             p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
         except AssertionError, e:

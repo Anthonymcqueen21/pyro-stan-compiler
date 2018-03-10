@@ -145,8 +145,8 @@ namespace stan {
           for (size_t j = 0; j < x.dimss_[i].size(); ++j)
             indexes.push_back(x.dimss_[i][j]);  // wasteful copy, could use refs
 
-        generate_pyro_indexed_expr<false>(expr_string, indexes, base_type,
-                                     e_num_dims, user_facing_, o_);
+        if (is_index_) generate_pyro_indexed_expr<true>(expr_string, indexes, base_type, e_num_dims, user_facing_, o_);
+        else generate_pyro_indexed_expr<false>(expr_string, indexes, base_type, e_num_dims, user_facing_, o_);
       }
 
       void operator()(const index_op_sliced& x) const {
