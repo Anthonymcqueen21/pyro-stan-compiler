@@ -123,11 +123,14 @@ def generate_pyro_file(mfile, pfile):
 def get_fns_pyro(pfile):
     pfile = sanitize_module_loading_file(pfile)
     mk_module(pfile)
-    model = import_by_string(pfile + ".model")
+    model = import_by_string(pfile + ".model") #reqiured
     #assert model is not None, "model couldn't be imported"
-    transformed_data = import_by_string(pfile + ".transformed_data")
-    init_params = import_by_string(pfile + ".init_params")
-    validate_data_def = import_by_string(pfile + ".validate_data_def")
+    try:
+        transformed_data = import_by_string(pfile + ".transformed_data")
+    except AttributeError as e:
+        transformed_data = None
+    init_params = import_by_string(pfile + ".init_params") #reqiured
+    validate_data_def = import_by_string(pfile + ".validate_data_def") #reqiured
     return validate_data_def, init_params, model, transformed_data
 
 def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):

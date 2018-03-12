@@ -138,8 +138,8 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
         if "invalid syntax" in str(e):
             return 3
         raise
-    except AttributeError as e: #one of the attributes/functions was not found in pyro code
-        return 3
+    #except AttributeError as e: #one of the attributes/functions was not found in pyro code
+    #    return 3
 
     try:
         validate_data_def(json_file_to_mem_format(file_data))

@@ -216,7 +216,18 @@ namespace stan {
       }
 
       void operator()(const cov_matrix_var_decl& x) const {
-        assert (false);
+        o_<<"init_matrix";
+        if (use_cache_) o_<<"_and_cache";
+        o_<<"(\""<< var_name_ <<"\""; //<<function_args(x);
+        o_<<", dims=(";
+        std::string str_dims = get_dims(x.dims_);
+        if (str_dims != "") o_<<str_dims<<", ";
+        pyro_generate_expression_as_index(x.K_, NOT_USER_FACING, o_);
+        o_<<", ";
+        pyro_generate_expression_as_index(x.K_, NOT_USER_FACING, o_);
+
+        o_<<")) # cov-matrix";
+        o_<<std::endl;
       }
 
       void operator()(const corr_matrix_var_decl& x) const {
@@ -320,7 +331,14 @@ namespace stan {
       }
 
       void operator()(const cov_matrix_var_decl& x) const {
-        assert (false);
+        o_ <<"check_constraints(" <<var_name_; //<< function_args(x);
+        std::string str_dims = get_dims(x.dims_);
+        if (str_dims != "") o_<<", dims=["<<str_dims<<",";
+        else o_ <<", dims=[";
+        pyro_generate_expression_as_index(x.K_, NOT_USER_FACING, o_);
+        o_<<", ";
+        pyro_generate_expression_as_index(x.K_, NOT_USER_FACING, o_);
+        o_<<"])"<<std::endl;;
       }
 
       void operator()(const corr_matrix_var_decl& x) const {
