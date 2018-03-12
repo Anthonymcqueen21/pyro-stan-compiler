@@ -25,7 +25,7 @@ def get_all_data_paths(root, ofldr):
 status_to_issue = {0 : "success",
                    1 : "R data conversion failed",
                    2: "Data division failed",
-                   3: "model is None",
+                   3: "model is None / Python Syntax Error",
                    4: "init_params is None",
                    5: "transformed_data is None",
                    6: "Log probs failed",
@@ -35,8 +35,10 @@ status_to_issue = {0 : "success",
                    10: "StanRuntimeError: mismatch in dimensions declared and found in context",
                    11: "distribution not implemented in pyro / not connected with Stan / issue with logits",
                    12: "Cannot handle function",
-                   13: "StanRuntimeError accessing element out of range",
-                   14: "variable values in data.R file are nested dictionaries!"}
+                   13: "StanRuntimeError accessing element out of range / Initialization failed / Syntax Error in Stan",
+                   14: "variable values in data.R file are nested dictionaries!",
+                   15: "original data validation failed",
+                   16: "splitted data validation failed"}
 
 import pickle
 def get_cached_state(fname):

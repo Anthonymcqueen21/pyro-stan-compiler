@@ -153,13 +153,15 @@ namespace stan {
         std::string op = boost::algorithm::erase_last_copy(x.op_, "=");
         generate_indent(indent_, o_);
         // LHS
+        std::stringstream ss_lhs;
         generate_indexed_expr<true>(x.var_dims_.name_,
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
                                     x.var_type_.dims_.size(),
                                     false,
-                                    o_);
-        o_ << " = ";
+                                    ss_lhs);
+        std::string s_lhs = ss_lhs.str();
+        o_ << s_lhs << " = _pyro_assign("<<s_lhs<< ", ";
         // RHS
         if (x.op_name_.size() == 0) {
           o_ << "(";
@@ -184,29 +186,32 @@ namespace stan {
           pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
           o_ << ")";
         }
-        o_ << EOL;
+        o_ << ")" << EOL;
       }
 
       void operator()(const assignment& x) const {
         // overwrite o_ to indicate ih for loop?
         generate_indent(indent_, o_);
         // LHS
+        std::stringstream ss_lhs;
         generate_pyro_indexed_expr<true>(x.var_dims_.name_,
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
                                     x.var_type_.dims_.size(),
                                     false,
-                                    o_);
-        o_ << " = ";
+                                    ss_lhs);
+        std::string s_lhs = ss_lhs.str();
+        o_ << s_lhs << " = _pyro_assign("<<s_lhs<< ", ";
+        // RHS
         // RHS
         if (x.var_dims_.dims_.size() == 0) {
             pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         } else {
-            o_ << "to_float(";
+            //o_ << "to_float(";
             pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
-            o_ << ")";
+            //o_ << ")";
         }
-        o_ << EOL;
+        o_ << ")" << EOL;
       }
 
       void operator()(const assgn& y) const {
@@ -460,19 +465,19 @@ namespace stan {
           if (i == 0)
             generate_indent(indent_, o_);
           else
-            o_ << " else ";
+            o_ << " else: ";
           o_ << "if (as_bool(";
           pyro_generate_expression(x.conditions_[i], NOT_USER_FACING, o_);
-          o_ << ")) {" << EOL;
+          o_ << ")):" << EOL;
           pyro_statement(x.bodies_[i], p_, indent_ + 1, o_);
           generate_indent(indent_, o_);
-          o_ << '}';
+          //o_ << '}';
         }
         if (x.bodies_.size() > x.conditions_.size()) {
-          o_ << " else {" << EOL;
+          o_ << "else: " << EOL;
           pyro_statement(x.bodies_[x.bodies_.size()-1], p_, indent_ + 1, o_);
           generate_indent(indent_, o_);
-          o_ << '}';
+          //o_ << '}';
         }
         o_ << EOL;
       }

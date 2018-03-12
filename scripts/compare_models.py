@@ -156,7 +156,7 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
         except RuntimeError, e:
             if "mismatch" in str(e) and "dimension" in str(e) and  "declared and found in context" in str(e):
                 return 10
-            if "accessing element out of range" in str(e):
+            if "accessing element out of range" in str(e) or "Initialization failed" in str(e):
                 return 13
             #print(e)
             raise

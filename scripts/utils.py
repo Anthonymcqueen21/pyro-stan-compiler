@@ -10,6 +10,7 @@ import pyro.distributions as pdist
 from os.path import join
 import pyro
 import math
+import subprocess
 from pdb import set_trace as bb
 
 def _index_select(arr, ix):
@@ -64,6 +65,9 @@ def _call_func(fname, args):
     except:
         assert False, "Cannot handle function=%s(%s,%s)" % (fname,args,kwargs)
 
+def identity(x):
+    return x
+
 def fma(x,y,z):
     return x*y+z
 
@@ -71,6 +75,23 @@ EPSILON = 1e-7
 
 cache_init = {}
 
+def as_bool(x):
+    if isinstance(x, bool) or isinstance(x, int):
+        return x >= 1
+    elif isinstance(x, float):
+        return as_bool(int(x))
+    elif isinstance(x, Variable):
+        assert len(x) == 1, "one_element allowed for Variable in as_bool"
+        return as_bool(x.item())
+    elif isinstance(x, collections.Iterable):
+        ctr = 0
+        v = None
+        for v_ in x:
+            v = v_
+            ctr +=1
+        assert (ctr == 1), "one_element allowed for Variable in as_bool"
+        return as_bool(v)
+    assert False, "Invalid type inside as_bool"
 
 def sanitize_module_loading_file(pfile):
     if pfile.endswith(".py"):
@@ -82,11 +103,22 @@ def sanitize_module_loading_file(pfile):
 def generate_pyro_file(mfile, pfile):
     with open(pfile, "w") as f:
         f.write("# model file: %s\n" % mfile)
-        f.write("from utils import to_variable, to_float, init_real_and_cache, _pyro_sample, _call_func\n")
-        f.write("from utils import init_vector_and_cache, _index_select, init_matrix_and_cache, to_int\n")
+        f.write("from utils import to_float, init_real_and_cache, _pyro_sample, _call_func, check_constraints\n")
+        f.write("from utils import init_real, init_vector, init_matrix\n")
+        f.write("from utils import init_vector_and_cache, _index_select, init_matrix_and_cache, to_int, _pyro_assign, as_bool\n")
         f.write("import torch\nimport pyro\n")
+        f.write("from utils import identity as to_variable\n\n")
 
-    os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
+        process = subprocess.Popen('../stan2pyro/bin/stan2pyro %s' % mfile, shell=True,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, close_fds=True)
+
+        out, err = process.communicate()
+        f.write(out + "\n")
+    assert "SYNTAX ERROR, MESSAGE(S) FROM PARSER" not in out, "SYNTAX ERROR in Stan Code"
+    assert "Aborted (core dumped)" not in out, "SYNTAX ERROR in Stan Code"
+
+    #os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
 
 def get_fns_pyro(pfile):
     pfile = sanitize_module_loading_file(pfile)
@@ -95,12 +127,16 @@ def get_fns_pyro(pfile):
     #assert model is not None, "model couldn't be imported"
     transformed_data = import_by_string(pfile + ".transformed_data")
     init_params = import_by_string(pfile + ".init_params")
-    return init_params, model, transformed_data
+    validate_data_def = import_by_string(pfile + ".validate_data_def")
+    return validate_data_def, init_params, model, transformed_data
 
 def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
     if dist_kwargs is None:
         dist_kwargs = {}
-    reshaped_dist_args = []
+
+    dist_args = [to_variable(v) for v in dist_args]
+    dist_kwargs = {k: to_variable(dist_kwargs[k]) for k in dist_kwargs}
+
     if dist_name.endswith("_logit"):
         dist_part = dist_name.split("_")[0]
         assert dist_part in ["bernoulli", "categorical"], "logits allowed in bernoulli, categorical only"
@@ -122,7 +158,19 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
     reshaped_dist_kwargs = {k: dist_kwargs[k].expand_as(lhs) for k in dist_kwargs}
     return pyro.sample(name, dist_class(*reshaped_dist_args, **reshaped_dist_kwargs), obs=obs)
 
-
+def _pyro_assign(lhs, rhs):
+    if isinstance(lhs, torch.Tensor) or isinstance(lhs, Variable):
+        shape_dim = len(lhs.shape)
+        if shape_dim == 0 or (shape_dim == 1 and lhs.shape[0]==1):
+            return to_float(rhs)
+        else:
+            return rhs.expand_as(lhs)
+    elif isinstance(lhs,float):
+        return to_float(rhs)
+    elif isinstance(lhs,int):
+        return to_int(rhs)
+    else:
+        assert False, "invalid lhs type: %s" % (lhs)
 
 def tensorize_data(data):
     for k in data:
@@ -192,14 +240,18 @@ def init_vector_and_cache(name,  low=None, high=None, dims=None):
     assert dims is not None, "dims cannot be empty for a vector"
     return init_real_and_cache(name, low=low, high=high, dims=dims)
 
-def init_real_and_cache(name, low=None, high=None, dims=(1)):
-    if name in cache_init:
-        assert cache_init[name] is not None
-        dims_lst = [dims] if isinstance(dims, int) else list(dims)
-        assert len(dims_lst) == len(cache_init[name].shape)
-        for i in range(len(dims_lst)):
-            assert cache_init[name].shape[i] == dims_lst[i], "shape mismatch!"
-        return cache_init[name]
+
+def init_matrix(name,  low=None, high=None, dims=None):
+    assert dims is not None, "dims cannot be empty for a vector"
+    return init_real(name, low=low, high=high, dims=dims)
+
+def init_vector(name,  low=None, high=None, dims=None):
+    assert dims is not None, "dims cannot be empty for a vector"
+    return init_real(name, low=low, high=high, dims=dims)
+
+def init_real(name, low=None, high=None, dims=(1)):
+    if isinstance(dims, float) or isinstance(dims, int):
+        dims = [to_int(dims)]
     if low is None:
         low = -2.
         if high is not None and low >= high:
@@ -208,16 +260,50 @@ def init_real_and_cache(name, low=None, high=None, dims=(1)):
         high = 2.
         if low >= high:
             high = low + 1.
-    cache_init[name] = dist.Uniform(to_variable(low).expand(dims), to_variable(high).expand(dims)).sample()
-    assert cache_init[name] is not None
+    r = dist.Uniform(to_variable(low).expand(dims), to_variable(high).expand(dims)).sample()
+    assert r is not None
+    return r
+
+def init_real_and_cache(name, low=None, high=None, dims=(1)):
+    if isinstance(dims, float) or isinstance(dims, int):
+        dims = [to_int(dims)]
+    if name in cache_init:
+        assert cache_init[name] is not None
+        dims_lst = [dims] if isinstance(dims, int) else list(dims)
+        assert len(dims_lst) == len(cache_init[name].shape)
+        for i in range(len(dims_lst)):
+            assert cache_init[name].shape[i] == dims_lst[i], "shape mismatch!"
+        return cache_init[name]
+    cache_init[name] = init_real(name,low=low,high=high,dims=dims)
     return cache_init[name]
 
+def check_constraints(v, low=None, high=None, dims=None):
+    if dims == []:
+        dims=[1]
+    assert dims is not None, "dims must be specified in check_constraints"
+    def check_l_h_float(v_):
+        assert low is None or v_ >= low, "low constraint not satsfied, v=%s low=%s" % (v_, low)
+        assert high is None or v_ <= high, "high constraint not satsfied, v=%s high=%s" % (v_, high)
+
+    if isinstance(v, int) or isinstance(v, float):
+        check_l_h_float(v)
+        assert dims == [1], "dims of int/float mismatched v=%s,dims=%s" % (v, dims)
+    elif isinstance(v, list):
+        n_ = len(v)
+        assert len(dims) >= 1, "invalid dims; expected=%d, found: None" % (n_)
+        assert n_ == dims[0], "dimension mismatch expected=%d, found=%d" % (n_, dims[0])
+        for v_i in v:
+            check_constraints(v_i, low=low, high=high, dims=dims[1:])
+    else:
+        assert False, "invalid data type for v=%s" % v
+
+
 def import_by_string(full_name):
-    try:
-        module_name, unit_name = full_name.rsplit('.', 1)
-        return getattr(__import__(module_name, fromlist=['']), unit_name)
-    except:
-        return None
+    #try:
+    module_name, unit_name = full_name.rsplit('.', 1)
+    return getattr(__import__(module_name, fromlist=['']), unit_name)
+    #except SyntaxError as e:
+    #    raise (e)
 
 def save_p(obj, fname):
     with open(fname, "wb") as f:

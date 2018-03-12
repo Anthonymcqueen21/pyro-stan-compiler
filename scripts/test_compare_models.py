@@ -7,7 +7,7 @@ import pyro
 import torch
 import os
 import json
-
+from pdb import set_trace as bb
 from divide_stan_data import divide_json_data
 def test1():
     model_cache = "./test/model_1.stan.pkl"
@@ -104,8 +104,14 @@ def cache_all_models(args):
         print("%d : %d" % (k, n))
 
 def test_generic(dfile, mfile, pfile, n_samples, model_cache):
-    generate_pyro_file(mfile, pfile)
-    jfile = "%s.json" %pfile
+    try:
+        generate_pyro_file(mfile, pfile)
+    except AssertionError as e:
+        if "SYNTAX ERROR in Stan Code" in str(e):
+            return 13
+        raise
+
+    jfile = "%s.json" % pfile
 
     if not os.path.exists(jfile):
         os.system("Rscript --vanilla convert_data.R %s %s" % (dfile, jfile))
@@ -126,7 +132,31 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
         return 2
     datas = [json_file_to_mem_format(jd1), json_file_to_mem_format(jd2)]
 
-    init_params, model, transformed_data = get_fns_pyro(pfile)
+    try:
+        validate_data_def, init_params, model, transformed_data = get_fns_pyro(pfile)
+    except SyntaxError as e:
+        if "invalid syntax" in str(e):
+            return 3
+        raise
+    except AttributeError as e: #one of the attributes/functions was not found in pyro code
+        return 3
+
+    try:
+        validate_data_def(json_file_to_mem_format(file_data))
+    except (AssertionError, KeyError) as e:
+        print("original data validation failed: %s" % str(e))
+        return 15
+    except:
+        raise
+
+    for data in datas:
+        try:
+            validate_data_def(data)
+        except (AssertionError, KeyError) as e:
+            print("splitted data validation failed: %s" % str(e))
+            return 16
+        except:
+            raise
 
     if model is None:
         return 3
