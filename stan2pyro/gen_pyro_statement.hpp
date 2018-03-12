@@ -42,6 +42,20 @@ namespace stan {
 
     void pyro_generate_expression_as_index(const expression& e, bool user_facing,
                              std::ostream& o);
+
+    bool is_a_number(std::string s, double &n){
+        try
+        {
+            n = boost::lexical_cast<double>(s);
+            return true;
+        }
+        catch(boost::bad_lexical_cast &)
+        {
+            // if it throws, it's not a number.
+            return false;
+        }
+    }
+
     /**
      * Visitor for generating statements.
      */
@@ -256,7 +270,7 @@ namespace stan {
       }
 
       void generate_observe(const expression& e) const {
-      // check if variable exists in data
+      // check if variable exists in data or it it is a constant
       // if so, generate observe statement
           std::string expr_str = pyro_generate_expression_string(e, NOT_USER_FACING);
           int n_d = p_.data_decl_.size();
@@ -284,7 +298,20 @@ namespace stan {
         std::stringstream ss;
         pyro_generate_expression_as_index(x.expr_, NOT_USER_FACING, ss);
         std::string lhs = ss.str();
-        o_ <<lhs;
+        double n;
+        bool is_num = is_a_number(lhs.c_str(), n);
+        if (!is_num) {
+            // conversion failed because the input wasn't a number
+            o_ <<lhs << " = ";
+        }
+        else {
+            // TODO: use this as observed value -- hack: output a temp variable with this const as its value
+            // TODO: then use this as lhs / observe
+            std::cerr << "SAMPLING CONSTANTS NOT SUPPORTED"<<std::endl;
+            assert (false);
+        }
+
+
         if ( const index_op* ix_op = boost::get<index_op>( &(x.expr_.expr_) ) ){
             // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
             std::stringstream expr_o;
@@ -311,7 +338,7 @@ namespace stan {
         }
         else lhs = "\"" + lhs + "\"";
 
-        o_ << " = _pyro_sample(";
+        o_ << " _pyro_sample(";
         //o_ << "lp_accum__.add(" << prob_fun << "<propto__>(";
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         o_ << ", ";

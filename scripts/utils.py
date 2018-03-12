@@ -101,6 +101,15 @@ def sanitize_module_loading_file(pfile):
     return pfile
 
 def generate_pyro_file(mfile, pfile):
+
+
+    process = subprocess.Popen('../stan2pyro/bin/stan2pyro %s' % mfile, shell=True,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr =subprocess.PIPE, close_fds=True)
+
+    out, err = process.communicate()
+    if err is None:
+        err = ""
     with open(pfile, "w") as f:
         f.write("# model file: %s\n" % mfile)
         f.write("from utils import to_float, init_real_and_cache, _pyro_sample, _call_func, check_constraints\n")
@@ -108,15 +117,9 @@ def generate_pyro_file(mfile, pfile):
         f.write("from utils import init_vector_and_cache, _index_select, init_matrix_and_cache, to_int, _pyro_assign, as_bool\n")
         f.write("import torch\nimport pyro\n")
         f.write("from utils import identity as to_variable\n\n")
-
-        process = subprocess.Popen('../stan2pyro/bin/stan2pyro %s' % mfile, shell=True,
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, close_fds=True)
-
-        out, err = process.communicate()
         f.write(out + "\n")
-    assert "SYNTAX ERROR, MESSAGE(S) FROM PARSER" not in out, "SYNTAX ERROR in Stan Code"
-    assert "Aborted (core dumped)" not in out, "SYNTAX ERROR in Stan Code"
+        for err_s in ["SYNTAX ERROR, MESSAGE(S) FROM PARSER", "Aborted (core dumped)", "SAMPLING CONSTANTS NOT SUPPORTED"]:
+            assert err_s not in out and err_s not in err, "SYNTAX ERROR in Stan Code"
 
     #os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
 
@@ -139,6 +142,8 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
 
     dist_args = [to_variable(v) for v in dist_args]
     dist_kwargs = {k: to_variable(dist_kwargs[k]) for k in dist_kwargs}
+    if obs is not None:
+        obs = to_variable(obs)
 
     if dist_name.endswith("_logit"):
         dist_part = dist_name.split("_")[0]
@@ -159,6 +164,7 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
         lhs = lhs.expand((1))
     reshaped_dist_args = [arg.expand_as(lhs) for arg in dist_args]
     reshaped_dist_kwargs = {k: dist_kwargs[k].expand_as(lhs) for k in dist_kwargs}
+
     return pyro.sample(name, dist_class(*reshaped_dist_args, **reshaped_dist_kwargs), obs=obs)
 
 def _pyro_assign(lhs, rhs):
