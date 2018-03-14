@@ -4,7 +4,6 @@ import json
 import pickle
 import torch
 import collections
-from torch.autograd import Variable
 import numpy as np
 import pyro.distributions as pdist
 from os.path import join
@@ -90,7 +89,7 @@ def as_bool(x):
         return x >= 1
     elif isinstance(x, float):
         return as_bool(int(x))
-    elif isinstance(x, Variable):
+    elif isinstance(x, torch.Tenspor):
         assert len(x) == 1, "one_element allowed for Variable in as_bool"
         return as_bool(x.item())
     elif isinstance(x, collections.Iterable):
@@ -187,7 +186,7 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
     return pyro.sample(name, dist_class(*reshaped_dist_args, **reshaped_dist_kwargs), obs=obs)
 
 def _pyro_assign(lhs, rhs):
-    if isinstance(lhs, torch.Tensor) or isinstance(lhs, Variable):
+    if isinstance(lhs, torch.Tensor) or isinstance(lhs, torch.Tensor):
         shape_dim = len(lhs.shape)
         if shape_dim == 0 or (shape_dim == 1 and lhs.shape[0]==1):
             return to_float(rhs)
@@ -208,8 +207,6 @@ def tensorize_data(data):
             data[k] = to_variable(data[k])
         elif isinstance(data[k], torch.Tensor):
             data[k] = to_variable(data[k])
-        elif isinstance(data[k], Variable):
-            pass
         else:
             assert False, "invalid tensorization of data dict"
 
@@ -385,20 +382,17 @@ def to_int(x):
 
 def to_float(x):
     if isinstance(x, torch.Tensor):
-        if len(x.shape) ==0:
+        if len(x.shape) == 0:
             return float(x)
         assert len(x) == 1
         return x[0]
     elif isinstance(x, collections.Iterable):
         c = 0
         for val in x:
-            c+=1
+            c += 1
         assert c == 1
         for val in x:
             return val
-
-    elif isinstance(x, Variable):
-        return x.item()
     else:
         return float(x)
 
@@ -408,15 +402,12 @@ def variablize_params(params):
 
 def to_variable(x, requires_grad=False):
     if isinstance(x, torch.Tensor):
-        return Variable(x, requires_grad=requires_grad)
+        return torch.tensor(x, requires_grad=requires_grad)
     elif isinstance(x, collections.Iterable):
-        return Variable(torch.FloatTensor(x), requires_grad=requires_grad)
+        return torch.tensor(x, requires_grad=requires_grad)
     elif isinstance(x, torch.Tensor):
-        return Variable(x, requires_grad=requires_grad)
-    elif isinstance(x, Variable):
         return x
-    else:
-        return Variable(torch.FloatTensor([x]), requires_grad=requires_grad)
+    return torch.tensor([x], requires_grad=requires_grad)
 
 def validate_json(rdata):
     n = len(rdata[0])

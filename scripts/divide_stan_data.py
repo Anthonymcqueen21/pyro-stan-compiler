@@ -6,6 +6,7 @@ import os.path
 import os
 from utils import validate_json
 from pdb import set_trace as bb
+from six import string_types
 
 def load_json(fname):
     with open(fname,"r") as f:
@@ -76,7 +77,7 @@ def write_to_folder(ofolder, jd1, jd2, dfile):
 
 
 def divide_json_data(jdata):
-    if isinstance(jdata[0], unicode) or isinstance(jdata[0], str):
+    if isinstance(jdata[0], string_types):
         jdata[0] = [jdata[0]]
     n = len(jdata[0])
     assert len(jdata) == 2 and len(jdata[1]) == n
