@@ -1,5 +1,29 @@
 ## Example steps
 
+
+#### Full example test
+
+```
+python -m pdb run_compiler_all_examples.py -e ../example-models/
+```
+
+The script caches the results after every processing 
+every Stan example in ./test_compiler/status.pkl
+
+Remove this file to re-run from scratch
+
+Look at the dictionary called status and status_to_issue -- it can provide the files that
+led to each error. Investigate each of them separately:
+
+(1) stan2pyro <stan-file>
+
+(2) python <generated-python-pyro-file> (test for syntax errors)
+
+(3) Re-run the pipeline with cached status dictionary from that point -- 
+to test the same file again after making relevant changes in 
+the compiler/Python runtime
+
+
 #### Convert data
 
 ```

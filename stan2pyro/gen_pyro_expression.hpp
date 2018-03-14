@@ -5,6 +5,7 @@
 #include <ostream>
 
 #include <utility>
+#include <set>
 #include <vector>
 
 #include <exception>
@@ -19,6 +20,7 @@ namespace stan {
 
     void pyro_statement(const statement& s, int indent, std::ostream& o);
 
+    std::string safeguard_varname(std::string name);
 
     // forward declare recursive helper functions
     void generate_array_builder_adds(const std::vector<expression>& elements,
@@ -116,7 +118,7 @@ namespace stan {
       }
 
       void operator()(const variable& v) const {
-        o_ << v.name_;
+        o_ << safeguard_varname(v.name_);
       }
 
       void operator()(int n) const {   // NOLINT

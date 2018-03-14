@@ -140,10 +140,18 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
                 transformed_data(data)
             except KeyError:
                 return 8
+            except AssertionError as e:
+                if "Cannot handle function" in str(e):
+                    return 12
+                raise
             except:
                 raise
         try:
             init_params(data, params)
+        except AssertionError as e:
+            if "Cannot handle function" in str(e):
+                return 12
+            raise
         except KeyError:
             return 9
 

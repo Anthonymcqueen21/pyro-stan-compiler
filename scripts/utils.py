@@ -113,7 +113,7 @@ def generate_pyro_file(mfile, pfile):
     with open(pfile, "w") as f:
         f.write("# model file: %s\n" % mfile)
         f.write("from utils import to_float, init_real_and_cache, _pyro_sample, _call_func, check_constraints\n")
-        f.write("from utils import init_real, init_vector, init_matrix\n")
+        f.write("from utils import init_real, init_vector, init_matrix, init_int, init_int_and_cache\n")
         f.write("from utils import init_vector_and_cache, _index_select, init_matrix_and_cache, to_int, _pyro_assign, as_bool\n")
         f.write("import torch\nimport pyro\n")
         f.write("from utils import identity as to_variable\n\n")
@@ -272,6 +272,28 @@ def init_real(name, low=None, high=None, dims=(1)):
     r = dist.Uniform(to_variable(low).expand(dims), to_variable(high).expand(dims)).sample()
     assert r is not None
     return r
+
+def init_int(name, low=None, high=None, dims=(1)):
+    if isinstance(dims, float) or isinstance(dims, int):
+        dims = [to_int(dims)]
+    if dims == [1]:
+        r = 0
+    else:
+        r = torch.zeros(dims)
+    return r
+
+def init_int_and_cache(name, low=None, high=None, dims=(1)):
+    if isinstance(dims, float) or isinstance(dims, int):
+        dims = [to_int(dims)]
+    if name in cache_init:
+        assert cache_init[name] is not None
+        dims_lst = [dims] if isinstance(dims, int) else list(dims)
+        assert len(dims_lst) == len(cache_init[name].shape)
+        for i in range(len(dims_lst)):
+            assert cache_init[name].shape[i] == dims_lst[i], "shape mismatch!"
+        return cache_init[name]
+    cache_init[name] = init_int(name,low=low,high=high,dims=dims)
+    return cache_init[name]
 
 def init_real_and_cache(name, low=None, high=None, dims=(1)):
     if isinstance(dims, float) or isinstance(dims, int):

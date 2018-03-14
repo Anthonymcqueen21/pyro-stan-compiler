@@ -100,6 +100,15 @@ namespace stan {
       }*/
     }
 
+    std::string safeguard_varname(std::string name){
+        std::string tmp[] = {"False", "class", "finally", "is", "return", "None", "continue", "for",
+        "lambda", "try", "True", "def", "from", "nonlocal", "while", "and", "del", "global", "not", "with", "as",
+        "elif", "if", "or", "yield", "assert", "else", "import", "pass", "break", "except", "in", "raise"};
+        std::set<std::string> res_keys(tmp, tmp + sizeof(tmp) / sizeof(tmp[0]));
+        if (res_keys.find(name) != res_keys.end()) return name + "_";
+        else return name;
+    }
+
     std::string get_dims(const std::vector<expression>& dims)  {
         std::stringstream ss;
         //ss<<"(";
@@ -159,7 +168,14 @@ namespace stan {
       void operator()(const nil& /*x*/) const { }  // dummy
 
       void operator()(const int_var_decl& x) const {
-        assert (false);
+        int n_dims = x.dims_.size();
+        o_<<"init_int";
+        if (use_cache_) o_<<"_and_cache";
+        o_<<"(\""<< var_name_ <<"\""<<function_args(x);
+        std::string str_dims = get_dims(x.dims_);
+        if (str_dims != "") o_<<", dims=("<<str_dims <<")";
+        o_ << ") # real/double";
+        o_<<std::endl;
       }
 
       void operator()(const vector_var_decl& x) const {
@@ -348,7 +364,7 @@ namespace stan {
 
 
     void generate_var_init_python(var_decl v, int indent, std::ostream& o){
-        std::string var_name = v.name();
+        std::string var_name = safeguard_varname(v.name());
         generate_indent(indent, o);
         o << var_name << " = ";
         stan::lang::pyro_init_visgen  iv(0,o,var_name,false);
@@ -418,7 +434,8 @@ namespace stan {
         std::cout<<"# INIT data\n";
         for (int i = 0; i < p.data_decl_.size(); i++) {
             generate_indent(1, std::cout);
-            std::cout << p.data_decl_[i].name() <<  " = data[\"" << p.data_decl_[i].name() << "\"]\n";
+            std::string var_name = safeguard_varname(p.data_decl_[i].name());
+            std::cout << var_name <<  " = data[\"" << var_name << "\"]\n";
         }
 
         int n_td = p.derived_data_decl_.first.size();
@@ -427,7 +444,7 @@ namespace stan {
             stan::lang::generate_indent(1, std::cout);
             std::cout<<"# INIT transformed data\n";
             for(int j=0; j<n_td; j++){
-                std::string var_name = p.derived_data_decl_.first[j].name();
+                std::string var_name = safeguard_varname(p.derived_data_decl_.first[j].name());
                 generate_indent(1, std::cout);
                 std::cout << var_name << " = data[\"" << var_name << "\"]\n";
             }
@@ -449,14 +466,14 @@ void printer(const stan::lang::program &p) {
     int n_d = p.data_decl_.size();
     for(int j=0; j<n_d; j++){
         stan::lang::generate_indent(1, std::cout);
-        std::string var_name = p.data_decl_[j].name();
+        std::string var_name = stan::lang::safeguard_varname(p.data_decl_[j].name());
         std::cout<<"assert '"<<var_name<<"' in data, 'variable not found in data: key="<<var_name<<"'"<<std::endl;
     }
     stan::lang::extract_data(p, false);
 
     std::stringstream ss_data_def; //to verify data dimensions / constraints in python
     for(int j=0; j<n_d; j++){
-        std::string var_name = p.data_decl_[j].name();
+        std::string var_name = stan::lang::safeguard_varname(p.data_decl_[j].name());
         stan::lang::generate_indent(1, ss_data_def);
         //ss_data_def << "'"<<var_name<<"' : ";
         stan::lang::pyro_varshape_visgen  vv(0,ss_data_def, var_name);
@@ -472,7 +489,7 @@ void printer(const stan::lang::program &p) {
         std::cout << "\ndef transformed_data(data):" << "\n";
         stan::lang::extract_data(p, false);
         for(int j=0; j<n_td; j++){
-            std::string var_name = p.derived_data_decl_.first[j].name();
+            std::string var_name = stan::lang::safeguard_varname(p.derived_data_decl_.first[j].name());
             stan::lang::generate_var_init_python((p.derived_data_decl_.first[j]), 1, std::cout);
         }
 
@@ -480,7 +497,7 @@ void printer(const stan::lang::program &p) {
             stan::lang::pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
         }
         for(int j=0; j<n_td; j++){
-            std::string var_name = p.derived_data_decl_.first[j].name();
+            std::string var_name = stan::lang::safeguard_varname(p.derived_data_decl_.first[j].name());
             stan::lang::generate_indent(1, std::cout);
             std::cout << "data[\"" << var_name << "\"] = ";
             std::cout << var_name << "\n";
@@ -494,7 +511,7 @@ void printer(const stan::lang::program &p) {
     std::cout<<"# assign init values for parameters\n";
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
-        std::string var_name = p.parameter_decl_[i].name();
+        std::string var_name = stan::lang::safeguard_varname(p.parameter_decl_[i].name());
         std::cout << "params[\"" << var_name << "\"] = ";
         stan::lang::var_decl x = p.parameter_decl_[i];
         stan::lang::pyro_init_visgen  iv(0,std::cout,var_name);
@@ -507,7 +524,8 @@ void printer(const stan::lang::program &p) {
     std::cout<<"# INIT parameters\n";
     for (int i = 0; i < p.parameter_decl_.size(); i++) {
         stan::lang::generate_indent(1, std::cout);
-        std::cout << p.parameter_decl_[i].name() <<  " = params[\"" << p.parameter_decl_[i].name() << "\"]\n";
+        std::cout << stan::lang::safeguard_varname(p.parameter_decl_[i].name()) <<  " = params[\"";
+        std::cout << stan::lang::safeguard_varname(p.parameter_decl_[i].name()) << "\"]\n";
     }
     stan::lang::generate_transformed_params_computation(p, 1, std::cout);
 

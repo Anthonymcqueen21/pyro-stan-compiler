@@ -55,12 +55,22 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--examples-folder', required=True, type=str, help="Examples Stan folder")
-    args = parser.parse_args()
+    parser.add_argument('-i', '--eid', default=None, type=int, help="example id to run")
+    p_args = parser.parse_args()
     ofldr = './test_compiler'
     mkdir_p(ofldr)
-    args = list(sorted(get_all_data_paths(args.examples_folder,ofldr)))
+    args = list(sorted(get_all_data_paths(p_args .examples_folder,ofldr)))
     print("%d =total possible (R data, stan model) pairs with the same name" % len(args))
 
+    if p_args.eid is not None:
+        import sys
+        (dfile, mfile, pfile, model_cache) = args[p_args.eid]
+        n_samples = 1
+        this_try = test_generic(dfile, mfile, pfile, n_samples, model_cache)
+        print(status_to_issue[this_try])
+        print(args[p_args.eid])
+        bb()
+        sys.exit(0)
     status = {k : [] for k in range(len(status_to_issue))}
     j=0
     cfname = "%s/status.pkl" % ofldr
@@ -79,10 +89,12 @@ if __name__ == "__main__":
         status[this_try].append((dfile,mfile,pfile,model_cache))
         print("TTTTTT %d: pyro-file: %s" % (j, pfile))
         for k in status:
-            print("%s : %d" % (status_to_issue[k], len(status[k])))
+            if len(status[k]) > 0:
+                print("%s : %d" % (status_to_issue[k], len(status[k])))
         if cfname is not None:
             save_cached_state(j, status, cfname)
         j+=1
     for k in status:
-        print("%s : %d" %(status_to_issue[k], len(status[k])))
+        if len(status[k]) > 0:
+            print("%s : %d" %(status_to_issue[k], len(status[k])))
     bb()
