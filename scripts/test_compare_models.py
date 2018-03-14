@@ -2,11 +2,12 @@ import numpy as np
 from compare_models import compare_models
 from utils import dist, EPSILON, set_seed, to_variable, to_float, dist, get_fns_pyro, \
     fma, init_real_and_cache, do_pyro_compatibility_hacks, generate_pyro_file, \
-    mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func
+    mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func, log_traceback
 import pyro
 import torch
 import os
 import json
+import sys
 from pdb import set_trace as bb
 from divide_stan_data import divide_json_data
 def test1():
@@ -108,6 +109,8 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
         generate_pyro_file(mfile, pfile)
     except AssertionError as e:
         if "SYNTAX ERROR in Stan Code" in str(e):
+            _, _, etb = sys.exc_info()
+            print(log_traceback(e, etb))
             return 13
         raise
 
@@ -122,8 +125,10 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
         file_data = json.load(fj)
     try:
         b, jd1, jd2 = divide_json_data(file_data)
-    except AssertionError, e:
+    except AssertionError as e:
         if "variable values in data.R file are nested dictionaries!" in str(e):
+            _, _, etb = sys.exc_info()
+            print(log_traceback(e, etb))
             return 14
         raise
 
@@ -136,6 +141,8 @@ def test_generic(dfile, mfile, pfile, n_samples, model_cache):
         validate_data_def, init_params, model, transformed_data = get_fns_pyro(pfile)
     except SyntaxError as e:
         if "invalid syntax" in str(e):
+            _, _, etb = sys.exc_info()
+            print(log_traceback(e, etb))
             return 3
         raise
     #except AttributeError as e: #one of the attributes/functions was not found in pyro code

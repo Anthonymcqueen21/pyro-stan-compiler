@@ -86,11 +86,13 @@ if __name__ == "__main__":
     for (dfile,mfile,pfile,model_cache) in args:
         n_samples =1
         this_try = test_generic(dfile,mfile,pfile,n_samples,model_cache)
+        if this_try not in [0,1,2, 15, 6, 13]:
+            bb()
         status[this_try].append((dfile,mfile,pfile,model_cache))
         print("TTTTTT %d: pyro-file: %s" % (j, pfile))
         for k in status:
             if len(status[k]) > 0:
-                print("%s : %d" % (status_to_issue[k], len(status[k])))
+                print("[%s]%s : %d" % (k, status_to_issue[k], len(status[k])))
         if cfname is not None:
             save_cached_state(j, status, cfname)
         j+=1

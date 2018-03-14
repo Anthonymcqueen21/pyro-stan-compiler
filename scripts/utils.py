@@ -11,6 +11,7 @@ from os.path import join
 import pyro
 import math
 import subprocess
+from six import string_types
 from pdb import set_trace as bb
 
 def _index_select(arr, ix):
@@ -25,6 +26,15 @@ def _index_select(arr, ix):
             return torch.index_select(arr, 0, ix)
     else:
         assert False, "invalid index selection"
+
+import traceback
+
+def log_traceback(ex, ex_traceback=None):
+    if ex_traceback is None:
+        ex_traceback = ex.__traceback__
+    tb_lines = [ line.rstrip('\n') for line in
+                 traceback.format_exception(ex.__class__, ex, ex_traceback)]
+    print("Exception: " + "\n".join(tb_lines))
 
 def _call_func(fname, args):
     kwargs ={}
@@ -108,8 +118,12 @@ def generate_pyro_file(mfile, pfile):
                                stderr =subprocess.PIPE, close_fds=True)
 
     out, err = process.communicate()
+    out = out.decode('utf-8')
     if err is None:
         err = ""
+    else:
+        err = err.decode('utf-8')
+
     with open(pfile, "w") as f:
         f.write("# model file: %s\n" % mfile)
         f.write("from utils import to_float, init_real_and_cache, _pyro_sample, _call_func, check_constraints\n")
@@ -119,7 +133,7 @@ def generate_pyro_file(mfile, pfile):
         f.write("from utils import identity as to_variable\n\n")
         f.write(out + "\n")
         for err_s in ["SYNTAX ERROR, MESSAGE(S) FROM PARSER", "Aborted (core dumped)", "SAMPLING CONSTANTS NOT SUPPORTED"]:
-            assert err_s not in out and err_s not in err, "SYNTAX ERROR in Stan Code"
+            assert err_s not in out and err_s not in err, "SYNTAX ERROR in Stan Code: %s" % err
 
     #os.system("../stan2pyro/bin/stan2pyro %s >> %s" % (mfile, pfile))
 
@@ -145,6 +159,9 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
     if obs is not None:
         obs = to_variable(obs)
 
+    mapped_names = {
+        "Multi_normal" : "MultivariateNormal"
+    }
     if dist_name.endswith("_logit"):
         dist_part = dist_name.split("_")[0]
         assert dist_part in ["bernoulli", "categorical"], "logits allowed in bernoulli, categorical only"
@@ -152,6 +169,8 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
         assert len(dist_args) == 1
         dist_kwargs["logits"] = dist_args[0]
         dist_args = []
+    elif dist_name in mapped_names:
+        dist_name = mapped_names[dist_name]
     else:
         dist_name = dist_name.capitalize()
 

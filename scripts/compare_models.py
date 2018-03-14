@@ -1,6 +1,7 @@
-from utils import load_data, import_by_string, exists_p, load_p, to_float, save_p, \
+from utils import load_data, import_by_string, exists_p, load_p, to_float, save_p, log_traceback, \
     do_pyro_compatibility_hacks, mk_module, tensorize_data, variablize_params, reset_initialization_cache
 import pystan
+import sys
 import numpy as np
 import pyro.poutine as poutine
 from pdb import set_trace as bb
@@ -142,6 +143,8 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
                 return 8
             except AssertionError as e:
                 if "Cannot handle function" in str(e):
+                    _, _ , etb = sys.exc_info()
+                    print(log_traceback(e,etb))
                     return 12
                 raise
             except:
@@ -150,9 +153,13 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
             init_params(data, params)
         except AssertionError as e:
             if "Cannot handle function" in str(e):
+                _, _, etb = sys.exc_info()
+                print(log_traceback(e, etb))
                 return 12
             raise
-        except KeyError:
+        except KeyError as e:
+            _, _, etb = sys.exc_info()
+            print(log_traceback(e, etb))
             return 9
 
         init_values = {k: params[k].data.cpu().numpy().tolist() for k in params}
@@ -161,10 +168,14 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
         #print(init_values)
         try:
             site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples, model_cache)
-        except RuntimeError, e:
+        except RuntimeError as e:
             if "mismatch" in str(e) and "dimension" in str(e) and  "declared and found in context" in str(e):
+                _, _, etb = sys.exc_info()
+                print(log_traceback(e, etb))
                 return 10
             if "accessing element out of range" in str(e) or "Initialization failed" in str(e):
+                _, _, etb = sys.exc_info()
+                print(log_traceback(e, etb))
                 return 13
             #print(e)
             raise
@@ -172,13 +183,19 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
 
         try:
             p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
-        except AssertionError, e:
+        except AssertionError as e:
             #print(e)
             if "dist_name=" in str(e) and "is invalid" in str(e):
+                _, _, etb = sys.exc_info()
+                print(log_traceback(e, etb))
                 return 11
             if "logits allowed in bernoulli, categorical only" in str(e):
+                _, _, etb = sys.exc_info()
+                print(log_traceback(e, etb))
                 return 11
             if "Cannot handle function" in str(e):
+                _, _, etb = sys.exc_info()
+                print(log_traceback(e, etb))
                 return 12
             raise
         p_avg = (np.mean(p_log_probs))/n_log_probs
