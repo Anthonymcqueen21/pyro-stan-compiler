@@ -185,7 +185,7 @@ def compare_models(code, datas, init_params, model, transformed_data, n_samples=
             p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
         except AssertionError as e:
             #print(e)
-            if "dist_name=" in str(e) and "is invalid" in str(e):
+            if "dist_name=" in str(e):
                 _, _, etb = sys.exc_info()
                 print(log_traceback(e, etb))
                 return 11

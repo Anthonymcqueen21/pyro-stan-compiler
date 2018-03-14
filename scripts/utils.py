@@ -10,6 +10,7 @@ import pyro.distributions as pdist
 from os.path import join
 import pyro
 import math
+import sys
 import subprocess
 from six import string_types
 from pdb import set_trace as bb
@@ -50,6 +51,11 @@ def _call_func(fname, args):
         [x] = args
         if fname == "log10":
             return torch.log(x) / math.log(10.)
+        elif fname == "inv_logit":
+            return torch.exp(x) / (1. + torch.exp(x))
+        elif fname == "Phi":
+            dims = x.shape
+            return dist.Normal(torch.zeros(dims), torch.ones(dims)).cdf(x)
 
     torch_funmap = {
         "fmin" : "min",
@@ -68,6 +74,7 @@ def _call_func(fname, args):
         fname = torch_funmap[fname]
         if fname == "sd":
             kwargs["unbiased"] = False
+
 
     try:
         args = list(map(lambda x: to_variable(x), args))
@@ -160,7 +167,7 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
         obs = to_variable(obs)
 
     mapped_names = {
-        "Multi_normal" : "MultivariateNormal"
+        # "multi_normal" : "MultivariateNormal"
     }
     if dist_name.endswith("_logit"):
         dist_part = dist_name.split("_")[0]
@@ -176,8 +183,9 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
 
     try:
         dist_class = getattr(dist, dist_name)
-    except:
-        assert False, "dist_name=%s is invalid" % dist_name
+    except Exception as e:
+        _, _ , etb = sys.exc_info()
+        assert False, "issue with dist_name=%s : %s" % (dist_name, log_traceback(e,etb))
 
     if len(lhs.shape) == 0:
         lhs = lhs.expand((1))
