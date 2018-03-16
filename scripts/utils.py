@@ -466,12 +466,55 @@ def load_data(fname):
 def handle_error(stage, e, etb=None):
     trace_v = log_traceback(e,etb)
     err_id = -1
-    if stage == "transformed_data":
+    if stage == "run_transformed_data":
         if isinstance(e, KeyError):
             trace_v = "KeyError in transforming data: %s" % trace_v
             err_id = 8
         elif isinstance(e, AssertionError) and "Cannot handle function" in str(e):
             err_id = 12
+    elif stage == "generate_pyro_file":
+        if isinstance(e, AssertionError) and "SYNTAX ERROR in Stan Code" in str(e):
+            err_id = 13
+            if "const stan::lang::" in trace_v:
+                err_id = 18
 
+    elif stage == "json_file_to_mem_format":
+        if isinstance(e, AssertionError) and "invalid json file data" in str(e):
+            err_id = 15
+    elif stage == "import_pyro_code":
+        if (isinstance(e, SyntaxError) and "invalid syntax" in str(e)) or \
+                (isinstance(e, AssertionError) and "model is None" in str(e)):
+            err_id = 3
+        elif isinstance(e, AssertionError) and "init_params is None" in str(e):
+            err_id = 4
+    elif stage == "validate_data_def":
+        err_id = 15
+        trace_v = "original data validation failed: %s" % trace_v
+    elif stage == "load_stan_code":
+        if isinstance(e, AssertionError) and "increment_log_prob used in Stan code" in str(e):
+            err_id = 7
+    elif stage == "run_init_params":
+        if "Cannot handle function" in str(e):
+            err_id = 12
+        elif "shape mismatch!" in str(e):
+            err_id = 17
+    elif stage == "run_stan":
+        if "mismatch" in str(e) and "dimension" in str(e) and "declared and found in context" in str(e):
+            err_id = 10
+        elif "accessing element out of range" in str(e) or "Initialization failed" in str(e) \
+                or "is neither int nor float nor list/array thereof" in str(e):
+            err_id = 13
+
+    elif stage == "run_pyro":
+        if "dist_name=" in str(e) or "logits allowed in bernoulli, categorical only" in str(e):
+            err_id = 11
+        elif "Cannot handle function" in str(e) or "inhomogeneous total_count is not supported" in str(e):
+            err_id = 12
+        elif "Multiple pyro.sample sites named" in str(e) or "is not defined" in str(e) or \
+                "tensors used as indices must be long or byte tensors" in str(e):
+            err_id = 3
+    elif stage == "log_prob_comparison":
+        if "Log probs don't match" in str(e) and isinstance(e, AssertionError):
+            err_id = 6
     assert err_id != -1, "cannot handle this error"
-    return err_id, trace_v
+    return err_id, "[stage=%s] : %s" % (stage, trace_v)

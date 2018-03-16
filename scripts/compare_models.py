@@ -138,7 +138,7 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
         try:
             transformed_data(data)
         except (KeyError, AssertionError) as e:
-            return handle_error("transformed_data", e)
+            return handle_error("run_transformed_data", e)
 
 
     lp_vals = []
@@ -149,16 +149,7 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
         try:
             init_params(data, params)
         except (KeyError, AssertionError) as e:
-            if "Cannot handle function" in str(e):
-                _, _, etb = sys.exc_info()
-                return 12, log_traceback(e,etb)
-            if "shape mismatch!" in str(e):
-                _, _, etb = sys.exc_info()
-                return 17, log_traceback(e,etb)
-            raise
-        except KeyError as e:
-            _, _, etb = sys.exc_info()
-            return 9, log_traceback(e,etb)
+            return handle_error("run_init_params", e)
 
         init_values = {k: params[k].data.cpu().numpy().tolist() for k in params}
         init_values = {k: (init_values[k][0]) if len(init_values[k])==1 else np.array(init_values[k]) for k in init_values}
@@ -167,35 +158,14 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
         try:
             site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples=1, model_cache=model_cache)
         except (ValueError, RuntimeError) as e:
-            if "mismatch" in str(e) and "dimension" in str(e) and  "declared and found in context" in str(e):
-
-                _, _, etb = sys.exc_info()
-                return 10, log_traceback(e,etb)
-            if "accessing element out of range" in str(e) or "Initialization failed" in str(e) \
-                    or "is neither int nor float nor list/array thereof" in str(e):
-                _, _, etb = sys.exc_info()
-                return 13, log_traceback(e,etb)
-            #print(e)
-            raise
+            return handle_error("run_stan", e)
 
 
         try:
             p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples=1, params=params)
-        except (NotImplementedError, AssertionError, RuntimeError) as e:
-            #print(e)
-            if "dist_name=" in str(e):
-                _, _, etb = sys.exc_info()
-                return 11, log_traceback(e,etb)
-            if "logits allowed in bernoulli, categorical only" in str(e):
-                _, _, etb = sys.exc_info()
-                return 11, log_traceback(e,etb)
-            if "Cannot handle function" in str(e) or "inhomogeneous total_count is not supported" in str(e):
-                _, _, etb = sys.exc_info()
-                return 12, log_traceback(e,etb)
-            if "Multiple pyro.sample sites named" in str(e):
-                _, _, etb = sys.exc_info()
-                return 3, log_traceback(e,etb)
-            raise
+        except (RuntimeError, NotImplementedError, AssertionError, RuntimeError, NameError) as e:
+            return handle_error("run_pyro", e)
+
         p_avg = (np.mean(p_log_probs))/n_log_probs
         s_avg = (np.mean(s_log_probs))/n_log_probs
         lp_vals.append((p_avg, s_avg))
@@ -206,10 +176,12 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
         for j in range(i):
             (p1,s1) = lp_vals[i]
             (p2,s2) = lp_vals[j]
-            if abs((p1-p2) - (s1-s2)) > 1e-2:
-                return 0, "Log probs don't match with EPS=1e-2! lp_vals = %s"  % (lp_vals)
-
-    return 1, "Log probs match"
+            try:
+                assert abs((p1-p2) - (s1-s2)) <= 1e-2, "Log-probs check failed -- Log " \
+                                                       "probs don't match with EPS=1e-2! lp_vals = %s"  % (lp_vals)
+            except AssertionError as e:
+                return handle_error("log_prob_comparison", e)
+    return 0, "success" #""Log probs match"
 
 
 if __name__ == "__main__":

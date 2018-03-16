@@ -39,7 +39,8 @@ status_to_issue = {0 : "success",
                    14: "variable values in data.R file are nested dictionaries!",
                    15: "original data validation failed",
                    16: "splitted data validation failed",
-                   17: "param shaped are probably dependent on data (shape mismatch in cache!)"}
+                   17: "param shaped are probably dependent on data (shape mismatch in cache!)",
+                   18: "Feature not implemented in Stan2Pyro.cpp"}
 
 import pickle
 def get_cached_state(fname):
@@ -90,8 +91,8 @@ if __name__ == "__main__":
         n_runs = 2
         print("STARTING TO PROCESS %d: pyro-file: %s" % (j, pfile))
         this_try, err = test_generic(dfile,mfile,pfile,n_runs,model_cache)
-        if err is not None and "const" in err and "Assertion" in err and "false" in err:
-            bb()
+        #if err is not None and "const" in err and "Assertion" in err and "false" in err:
+        #    bb()
         status[this_try].append((dfile,mfile,pfile,model_cache,err))
 
         for k in status:

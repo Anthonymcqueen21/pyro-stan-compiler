@@ -1,7 +1,7 @@
 import numpy as np
 from compare_models import compare_models
 from utils import dist, EPSILON, set_seed, to_variable, to_float, dist, get_fns_pyro, \
-    fma, init_real_and_cache, do_pyro_compatibility_hacks, generate_pyro_file, \
+    fma, init_real_and_cache, do_pyro_compatibility_hacks, generate_pyro_file, handle_error, \
     mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func, log_traceback
 import pyro
 import torch
@@ -107,10 +107,7 @@ def test_generic(dfile, mfile, pfile, n_runs, model_cache):
     try:
         generate_pyro_file(mfile, pfile)
     except AssertionError as e:
-        if "SYNTAX ERROR in Stan Code" in str(e):
-            _, _, etb = sys.exc_info()
-            return 13, log_traceback(e, etb)
-        raise
+        return handle_error("generate_pyro_file", e)
 
     jfile = "%s.json" % pfile
 
@@ -137,28 +134,19 @@ def test_generic(dfile, mfile, pfile, n_runs, model_cache):
     try:
         data = json_file_to_mem_format(file_data)
     except AssertionError as e:
-        if "invalid json file data" in str(e):
-            _, _, etb = sys.exc_info()
-            return 15, log_traceback(e, etb)
+        return handle_error("json_file_to_mem_format", e)
+
     try:
         validate_data_def, init_params, model, transformed_data = get_fns_pyro(pfile)
     except SyntaxError as e:
-
-        if "invalid syntax" in str(e):
-            _, _, etb = sys.exc_info()
-            return 3, log_traceback(e, etb)
-        bb()
-        raise
+        return handle_error("import_pyro_code", e)
     #except AttributeError as e: #one of the attributes/functions was not found in pyro code
     #    return 3
 
     try:
         validate_data_def(data)
     except (AssertionError, KeyError) as e:
-        _, _, etb = sys.exc_info()
-        return 15, "original data validation failed: %s" % log_traceback(e, etb)
-    except:
-        raise
+        return handle_error("validate_data_def", e)
 
     """for data in datas:
         try:
@@ -170,28 +158,26 @@ def test_generic(dfile, mfile, pfile, n_runs, model_cache):
             raise
     """
 
-    if model is None:
-        return 3, "model is None"
-    if init_params is None:
-        return 4, "init_params is None"
+    try:
+        assert model is not None, "model is None"
+        assert init_params is not None, "init_params is None"
+    except AssertionError as e:
+        return handle_error("import_pyro_code", e)
+
     #if transformed_data is None:
     #    return 5
 
     with open(mfile, "r") as f:
         code = f.read()
-    # TODO: remember to coordinate this with Pyro dist = DIST() object in units.py
-    # code = do_pyro_compatibility_hacks(code)
-    if "increment_log_prob" in code:
-        return 7, "increment_log_prob used in Stan code"
+
+    try:
+        assert  "increment_log_prob" not in code, "increment_log_prob used in Stan code"
+    except AssertionError as e:
+        return handle_error("load_stan_code", e)
 
     matched, err_s = compare_models(code, data, init_params, model, transformed_data,
                    n_runs=n_runs, model_cache=model_cache)
-    if matched == True:
-        return 0, "success"
-    elif int(matched) >= 8:
-        return matched, err_s
-    else:
-        return 6, "Log-probs check failed"
+    return matched, err_s
 
 def test2():
     n_samples=1
