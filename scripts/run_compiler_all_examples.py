@@ -66,7 +66,11 @@ if __name__ == "__main__":
 
     if p_args.eid is not None:
         import sys
-        (dfile, mfile, pfile, model_cache) = args[p_args.eid]
+
+        for (dfile, mfile, pfile, model_cache) in args:
+            if ("_%s_" % p_args.eid) in pfile:
+                break
+        
         n_runs = 2
         this_try = test_generic(dfile, mfile, pfile, n_runs, model_cache)
         print(status_to_issue[this_try])
@@ -103,5 +107,5 @@ if __name__ == "__main__":
         j+=1
     for k in status:
         if len(status[k]) > 0:
-            print("%s : %d" %(status_to_issue[k], len(status[k])))
+            print("[%s] %s : %d" %(k, status_to_issue[k], len(status[k])))
     bb()
