@@ -34,7 +34,9 @@ def log_traceback(ex, ex_traceback=None):
         ex_traceback = ex.__traceback__
     tb_lines = [ line.rstrip('\n') for line in
                  traceback.format_exception(ex.__class__, ex, ex_traceback)]
-    print("Exception: " + "\n".join(tb_lines))
+    trace_v = ("Exception: " + "\n".join(tb_lines))
+    print(trace_v)
+    return trace_v
 
 def _call_func(fname, args):
     kwargs ={}
@@ -48,6 +50,7 @@ def _call_func(fname, args):
 
     if len(args) == 1:
         [x] = args
+        x = to_variable(x)
         if fname == "log10":
             return torch.log(x) / math.log(10.)
         elif fname == "inv_logit":
@@ -96,7 +99,7 @@ def as_bool(x):
         return x >= 1
     elif isinstance(x, float):
         return as_bool(int(x))
-    elif isinstance(x, torch.Tenspor):
+    elif isinstance(x, torch.Tensor):
         assert len(x) == 1, "one_element allowed for Variable in as_bool"
         return as_bool(x.item())
     elif isinstance(x, collections.Iterable):
@@ -132,9 +135,9 @@ def generate_pyro_file(mfile, pfile):
 
     with open(pfile, "w") as f:
         f.write("# model file: %s\n" % mfile)
-        f.write("from utils import to_float, init_real_and_cache, _pyro_sample, _call_func, check_constraints\n")
-        f.write("from utils import init_real, init_vector, init_matrix, init_int, init_int_and_cache\n")
-        f.write("from utils import init_vector_and_cache, _index_select, init_matrix_and_cache, to_int, _pyro_assign, as_bool\n")
+        f.write("from utils import to_float, _pyro_sample, _call_func, check_constraints\n")
+        f.write("from utils import init_real, init_vector, init_matrix, init_int\n")
+        f.write("from utils import _index_select, to_int, _pyro_assign, as_bool\n")
         f.write("import torch\nimport pyro\n")
         f.write("from utils import identity as to_variable\n\n")
         f.write(out + "\n")
@@ -186,7 +189,9 @@ def _pyro_sample(lhs, name, dist_name, dist_args, dist_kwargs=None,  obs=None):
         _, _ , etb = sys.exc_info()
         assert False, "issue with dist_name=%s : %s" % (dist_name, log_traceback(e,etb))
 
-    if len(lhs.shape) == 0:
+    if isinstance(lhs, float) or isinstance(lhs, int):
+        lhs = torch.tensor([lhs])
+    elif len(lhs.shape) == 0:
         lhs = lhs.expand((1))
     reshaped_dist_args = [arg.expand_as(lhs) for arg in dist_args]
     reshaped_dist_kwargs = {k: dist_kwargs[k].expand_as(lhs) for k in dist_kwargs}
@@ -208,16 +213,26 @@ def _pyro_assign(lhs, rhs):
         assert False, "invalid lhs type: %s" % (lhs)
 
 def tensorize_data(data):
+    to_delete = []
     for k in data:
         if isinstance(data[k], float) or isinstance(data[k], int):
             pass
+        elif isinstance(data[k], string_types):
+            to_delete.append(k)
         elif isinstance(data[k], list):
-            data[k] = to_variable(data[k])
+            for s in data[k]:
+                if isinstance(s, string_types):
+                    to_delete.append(k)
+                    break
+            else:
+                data[k] = to_variable(data[k])
         elif isinstance(data[k], torch.Tensor):
             data[k] = to_variable(data[k])
         else:
             assert False, "invalid tensorization of data dict"
-
+    for k in to_delete:
+        print("Deleting k=%s string data in dict" % k)
+        del data[k]
 def set_seed(seed, use_cuda):
     if seed is not None:
         torch.manual_seed(seed)
@@ -254,10 +269,10 @@ class DIST(dict):
         try:
             return getattr(pdist, x)
         except:
-            if x == "Inv_gamma":
-                return pdist.Normal
-            else:
-                raise
+        #    if x == "Inv_gamma":
+        #        return pdist.Normal
+        #    else:
+            raise
 dist = DIST()
 
 def reset_initialization_cache():
@@ -320,6 +335,7 @@ def init_int_and_cache(name, low=None, high=None, dims=(1)):
     return cache_init[name]
 
 def init_real_and_cache(name, low=None, high=None, dims=(1)):
+    assert False, "not caching params anymore"
     if isinstance(dims, float) or isinstance(dims, int):
         dims = [to_int(dims)]
     if name in cache_init:
@@ -409,9 +425,7 @@ def variablize_params(params):
         params[k] = to_variable(params[k], requires_grad=True)
 
 def to_variable(x, requires_grad=False):
-    if isinstance(x, torch.Tensor):
-        return torch.tensor(x, requires_grad=requires_grad)
-    elif isinstance(x, collections.Iterable):
+    if isinstance(x, collections.Iterable):
         return torch.tensor(x, requires_grad=requires_grad)
     elif isinstance(x, torch.Tensor):
         return x
@@ -433,8 +447,8 @@ def validate_json(rdata):
 
 
 def json_file_to_mem_format(rdata):
-    assert validate_json(rdata)
-    assert len(rdata) == 2
+    assert validate_json(rdata), "invalid json file data"
+    assert len(rdata) == 2, "invalid json file data"
     data = {}
     n = len(rdata[0])
     for i in range(n):
@@ -447,3 +461,17 @@ def load_data(fname):
     with open(fname,"r") as f:
         rdata = json.load(f)
     return json_file_to_mem_format(rdata)
+
+
+def handle_error(stage, e, etb=None):
+    trace_v = log_traceback(e,etb)
+    err_id = -1
+    if stage == "transformed_data":
+        if isinstance(e, KeyError):
+            trace_v = "KeyError in transforming data: %s" % trace_v
+            err_id = 8
+        elif isinstance(e, AssertionError) and "Cannot handle function" in str(e):
+            err_id = 12
+
+    assert err_id != -1, "cannot handle this error"
+    return err_id, trace_v

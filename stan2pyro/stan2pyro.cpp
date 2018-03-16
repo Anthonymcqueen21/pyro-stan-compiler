@@ -130,7 +130,7 @@ namespace stan {
       size_t indent_;
       std::string var_name_;
       bool use_cache_;
-      explicit pyro_init_visgen (size_t indent, std::ostream& o, std::string var_name, bool use_cache=true)
+      explicit pyro_init_visgen (size_t indent, std::ostream& o, std::string var_name, bool use_cache)
         : visgen(o), indent_(indent), var_name_(var_name), use_cache_(use_cache) {  }
 
       template <typename D>
@@ -234,7 +234,7 @@ namespace stan {
       void operator()(const cov_matrix_var_decl& x) const {
         o_<<"init_matrix";
         if (use_cache_) o_<<"_and_cache";
-        o_<<"(\""<< var_name_ <<"\""; //<<function_args(x);
+        o_<<"(\""<< var_name_ <<"\", low=0."; //<<function_args(x);
         o_<<", dims=(";
         std::string str_dims = get_dims(x.dims_);
         if (str_dims != "") o_<<str_dims<<", ";
@@ -514,7 +514,7 @@ void printer(const stan::lang::program &p) {
         std::string var_name = stan::lang::safeguard_varname(p.parameter_decl_[i].name());
         std::cout << "params[\"" << var_name << "\"] = ";
         stan::lang::var_decl x = p.parameter_decl_[i];
-        stan::lang::pyro_init_visgen  iv(0,std::cout,var_name);
+        stan::lang::pyro_init_visgen  iv(0,std::cout,var_name, false);
         boost::apply_visitor(iv, p.parameter_decl_[i].decl_);
     }
     std::cout << "\ndef model(data, params):" << "\n";

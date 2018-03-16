@@ -21,13 +21,14 @@ namespace stan {
 
     void generate_var_init_python(var_decl v, int indent, std::ostream& o);
 
+    std::string safeguard_varname(std::string name);
+
     void pyro_generate_expression(const expression& e, bool user_facing,
                                   std::ostream& o);
 
     std::string pyro_generate_expression_string(const expression& e,
                                                 bool user_facing);
 
-    void generate_idxs(const std::vector<idx>& idxs, std::ostream& o);
 
     void generate_statement(const std::vector<statement>& ss, int indent,
                             std::ostream& o);
@@ -43,6 +44,25 @@ namespace stan {
     void pyro_generate_expression_as_index(const expression& e, bool user_facing,
                              std::ostream& o);
 
+
+    bool is_an_int(std::string s, int &n){
+        try
+        {
+            n = boost::lexical_cast<int>(s);
+            return true;
+        }
+        catch(boost::bad_lexical_cast &)
+        {
+            // if it throws, it's not a number.
+            return false;
+        }
+    }
+    bool is_an_int(std::string s){
+        int n = 0;
+        return is_an_int(s,n);
+    }
+
+
     bool is_a_number(std::string s, double &n){
         try
         {
@@ -54,6 +74,49 @@ namespace stan {
             // if it throws, it's not a number.
             return false;
         }
+    }
+
+
+    struct pyro_idx_visgen : public visgen {
+      /**
+       * Construct a visitor for generating multiple indexes.
+       *
+       * @param o stream for generating
+       */
+      explicit pyro_idx_visgen(std::ostream& o): visgen(o) { }
+
+      void operator()(const uni_idx& i) const {
+        generate_expression(i.idx_, NOT_USER_FACING, o_);
+      }
+
+      void operator()(const multi_idx& i) const {
+        generate_expression(i.idxs_, NOT_USER_FACING, o_);
+      }
+
+      void operator()(const omni_idx& i) const {
+        o_ << ":";
+      }
+
+      void operator()(const lb_idx& i) const {
+        generate_expression(i.lb_, NOT_USER_FACING, o_);
+        o_ << ":";
+      }
+
+      void operator()(const ub_idx& i) const {
+        o_ << ":";
+        generate_expression(i.ub_, NOT_USER_FACING, o_);
+      }
+
+      void operator()(const lub_idx& i) const {
+        generate_expression(i.lb_, NOT_USER_FACING, o_);
+        o_ << ":";
+        generate_expression(i.ub_, NOT_USER_FACING, o_);
+      }
+    };
+
+    void pyro_generate_idx(const idx& i, std::ostream& o) {
+      pyro_idx_visgen vis(o);
+      boost::apply_visitor(vis, i.idx_);
     }
 
     /**
@@ -168,7 +231,7 @@ namespace stan {
         generate_indent(indent_, o_);
         // LHS
         std::stringstream ss_lhs;
-        generate_indexed_expr<true>(x.var_dims_.name_,
+        generate_indexed_expr<true>(safeguard_varname(x.var_dims_.name_),
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
                                     x.var_type_.dims_.size(),
@@ -179,7 +242,7 @@ namespace stan {
         // RHS
         if (x.op_name_.size() == 0) {
           o_ << "(";
-          generate_pyro_indexed_expr<false>(x.var_dims_.name_,
+          generate_pyro_indexed_expr<false>(safeguard_varname(x.var_dims_.name_),
                                       x.var_dims_.dims_,
                                       x.var_type_.base_type_,
                                       x.var_type_.dims_.size(),
@@ -190,7 +253,7 @@ namespace stan {
           o_ << ")";
         } else {
           o_ << x.op_name_ << "(";
-          generate_pyro_indexed_expr<false>(x.var_dims_.name_,
+          generate_pyro_indexed_expr<false>(safeguard_varname(x.var_dims_.name_),
                                       x.var_dims_.dims_,
                                       x.var_type_.base_type_,
                                       x.var_type_.dims_.size(),
@@ -208,7 +271,7 @@ namespace stan {
         generate_indent(indent_, o_);
         // LHS
         std::stringstream ss_lhs;
-        generate_pyro_indexed_expr<true>(x.var_dims_.name_,
+        generate_pyro_indexed_expr<true>(safeguard_varname(x.var_dims_.name_),
                                     x.var_dims_.dims_,
                                     x.var_type_.base_type_,
                                     x.var_type_.dims_.size(),
@@ -231,36 +294,20 @@ namespace stan {
       void operator()(const assgn& y) const {
 
         generate_indent(indent_, o_);
-        o_ << "stan::model::assign(";
+        // o_ << "stan::model::assign(";
 
         expression var_expr(y.lhs_var_);
         pyro_generate_expression(var_expr, NOT_USER_FACING, o_);
-        o_ << ", "
-           << EOL;
+        o_ << "[";
 
-        generate_indent(indent_ + 3, o_);
-        generate_idxs(y.idxs_, o_);
-        o_ << ", "
-           << EOL;
-
-        generate_indent(indent_ + 3, o_);
-        if (y.lhs_var_occurs_on_rhs()) {
-          o_ << "stan::model::deep_copy(";
-          pyro_generate_expression(y.rhs_, NOT_USER_FACING, o_);
-          o_ << ")";
-        } else {
-          pyro_generate_expression(y.rhs_, NOT_USER_FACING, o_);
+        for (int i=0; i<y.idxs_.size(); i++){
+            pyro_generate_idx(y.idxs_[i], o_);
+            if (i!=y.idxs_.size()-1) o_<<", ";
         }
 
-        o_ << ", "
-           << EOL;
-        generate_indent(indent_ + 3, o_);
-        o_ << '"'
-           << "assigning variable "
-           << y.lhs_var_.name_
-           << '"';
-        o_ << ");"
-           << EOL;
+        o_ << "] = ";
+        pyro_generate_expression(y.rhs_, NOT_USER_FACING, o_);
+        o_ << EOL;
       }
 
       void operator()(const expression& x) const {
@@ -276,13 +323,13 @@ namespace stan {
           int n_d = p_.data_decl_.size();
           // iterate over  data block  and check if variable is in data
           for(int j=0;j<n_d; j++){
-              if (expr_str == p_.data_decl_[j].name())
+              if (expr_str == safeguard_varname(p_.data_decl_[j].name()))
                   o_ << ", obs=" << expr_str;
           }
           // iterate over  data block  and check if variable is in transformed data
           int n_td = p_.derived_data_decl_.first.size();
           for(int j=0;j<n_td; j++){
-              if (expr_str == p_.derived_data_decl_.first[j].name())
+              if (expr_str == safeguard_varname(p_.derived_data_decl_.first[j].name()))
                   o_ << ", obs=" << expr_str;
           }
 
@@ -424,21 +471,22 @@ namespace stan {
         o_ << EOL;
       }
 
-      bool is_number(std::string& s) const {
-          if (s[0] == '-') s = s.substr(1, s.size());
-          std::string::const_iterator it = s.begin();
-          while (it != s.end() && std::isdigit(*it)) ++it;
-          return !s.empty() && it == s.end();
-      }
 
       void operator()(const for_statement& x) const {
         generate_indent(indent_, o_);
         o_ << "for " << x.variable_ << " in ";
         o_ << "range(";
-        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, o_);
-        o_ <<", ";
-        pyro_generate_expression_as_index(x.range_.high_, NOT_USER_FACING, o_);
-        o_ <<" + 1):" << EOL;
+        std::stringstream ss_l;
+        pyro_generate_expression_as_index(x.range_.low_, NOT_USER_FACING, ss_l);
+        std::string l_str = ss_l.str();
+        if (!is_an_int(l_str)) l_str = "to_int(" + l_str + ")";
+        o_ << l_str << ", ";
+        std::stringstream ss_h;
+        pyro_generate_expression_as_index(x.range_.high_, NOT_USER_FACING, ss_h);
+        //bool is_int_high = x.range_.high_.expression_type().is_primitive_int();
+        std::string h_str = ss_h.str();
+        if (!is_an_int(h_str)) h_str = "to_int(" + h_str + ")";
+        o_ << h_str << " + 1):" << EOL;
         pyro_statement(x.statement_, p_, indent_ + 1, o_);
       }
 
