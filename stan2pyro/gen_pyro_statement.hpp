@@ -317,21 +317,36 @@ namespace stan {
       }
 
       void generate_observe(const expression& e) const {
-      // check if variable exists in data or it it is a constant
-      // if so, generate observe statement
           std::string expr_str = pyro_generate_expression_string(e, NOT_USER_FACING);
+          std::string base_str="";
+          bool gen_observe = false;
+          if ( const index_op* ie = boost::get<index_op>( &(e.expr_) ) ){
+            // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
+            base_str = pyro_generate_expression_string(ie->expr_, NOT_USER_FACING);
+          }
+          // check if variable exists in data or it it is a constant
+          // if so, generate observe statement
+
           int n_d = p_.data_decl_.size();
           // iterate over  data block  and check if variable is in data
           for(int j=0;j<n_d; j++){
-              if (expr_str == safeguard_varname(p_.data_decl_[j].name()))
-                  o_ << ", obs=" << expr_str;
+              std::string var_name = safeguard_varname(p_.data_decl_[j].name());
+              if (expr_str == var_name || base_str == var_name){
+                gen_observe = true;
+                break;
+              }
           }
           // iterate over  data block  and check if variable is in transformed data
           int n_td = p_.derived_data_decl_.first.size();
           for(int j=0;j<n_td; j++){
-              if (expr_str == safeguard_varname(p_.derived_data_decl_.first[j].name()))
-                  o_ << ", obs=" << expr_str;
+              std::string var_name = safeguard_varname(p_.derived_data_decl_.first[j].name());
+              if (expr_str == var_name || base_str == var_name){
+                gen_observe = true;
+                break;
+              }
           }
+
+          if (gen_observe) o_ << ", obs=" << expr_str;
 
       }
 

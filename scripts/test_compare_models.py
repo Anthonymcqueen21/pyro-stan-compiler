@@ -1,9 +1,11 @@
 import numpy as np
 from compare_models import compare_models
-from utils import dist, EPSILON, set_seed, to_variable, to_float, dist, get_fns_pyro, \
-    fma, init_real_and_cache, do_pyro_compatibility_hacks, generate_pyro_file, handle_error, \
-    mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func, log_traceback
+from utils import  EPSILON, set_seed, to_variable, to_float, get_fns_pyro, \
+    fma, init_real, do_pyro_compatibility_hacks, generate_pyro_file, handle_error, \
+    mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func, log_traceback, \
+    init_vector, init_matrix, to_int, _pyro_assign, _index_select
 import pyro
+import pyro.distributions as dist
 import torch
 import os
 import json
@@ -27,18 +29,15 @@ def test1():
         }
     """
     N=1
-    datas = [
-        {'N' : N, 'y' : list(0.5 + np.random.randn(N)*0.5)},
-        {'N': N, 'y': list(0.5 + np.random.randn(N) * 0.5)},
-    ]
+    data ={'N' : N, 'y' : list(0.5 + np.random.randn(N)*0.5)}
 
     transformed_data = None
 
     def init_params(data, params):
         N = data["N"]
         y = data["y"]
-        params["mu"] =  init_real_and_cache("mu")
-        params["sigma"] = init_real_and_cache("sigma",low=0.)
+        params["mu"] =  init_real("mu")
+        params["sigma"] = init_real("sigma",low=0.)
 
     def model(data, params):
         N = data["N"]
@@ -47,10 +46,114 @@ def test1():
         sigma = params["sigma"]
         pyro.sample("y", dist.Normal(mu,sigma), obs =y)
 
-    compare_models(code, datas, init_params, model, transformed_data,
-                    n_samples=n_samples, model_cache=model_cache)
+    compare_models(code, data, init_params, model, transformed_data, n_runs=2, model_cache=model_cache)
+
+def test5():
+    model_cache = "./test/model_5.stan.pkl"
+
+    N=1
+    M=1
+    data = {
+        "y" : 1
+    }
+
+    code = """
+    data {
+      int<lower=0,upper=1> y;
+    }
+    parameters {
+      vector[3] beta;
+    }
+    transformed parameters {
+      real n_avoid;
+      real n_shock;
+      real p;
+      
+      n_avoid = 0;
+      n_shock = 0;
+      p = beta[1] + beta[2] * n_avoid + beta[3] * n_shock;
+      
+    }
+    model {
+      beta ~ normal(0, 100);
+      y ~ bernoulli_logit(p);
+    }
+    """
+    def init_params(data, params):
+        y = data["y"]
+        params["beta"] = torch.rand(3)
+
+    def model(data, params):
+        y = data["y"]
+        beta = params["beta"]
+        # INIT transformed parameters
+        n_avoid = torch.zeros(1)  # matrix
+        n_shock = torch.zeros(1)  # matrix
+        p = torch.zeros(1)  # matrix
 
 
+        n_avoid = torch.zeros(1)
+        n_shock = torch.zeros(1)
+        p = beta[0] + beta[1] * n_avoid + beta[2] * n_shock
+
+        beta = _pyro_sample(beta, "beta", "normal", [0, 100])
+
+
+        y = _pyro_sample(y,"y", "bernoulli_logit",p, obs=y)
+
+
+
+    m, e = compare_models(code, data, init_params, model, None, n_runs=2, model_cache=model_cache)
+    print(m, e)
+
+def test4():
+    model_cache = "./test/model_4.stan.pkl"
+    n_samples =1
+    code = """
+        data {
+            int N;
+            real y[N];
+        }
+        parameters {
+            real mu;
+            real<lower=0> sigma;
+        }
+        transformed parameters {
+            real mu_p;
+            mu_p = -200*mu;
+        }
+        model {
+            mu ~ normal(0,100);
+            y ~ normal(mu_p, sigma);
+        }
+    """
+    N=1
+    data = {'N': N, 'y': [1]*N}
+
+
+    transformed_data = None
+
+    def init_params(data, params):
+        N = data["N"]
+        y = data["y"]
+        params["mu"] =  init_real("mu")
+        params["sigma"] = init_real("sigma",low=0.)
+
+    def model(data, params):
+        N = data["N"]
+        y = data["y"]
+        mu = params["mu"]
+        sigma = params["sigma"]
+
+        mu_p = -200. * mu
+
+        mu = pyro.sample("mu", dist.Normal(torch.zeros(N), torch.ones(N)*100.))
+
+        pyro.sample("y", dist.Normal(mu_p,sigma), obs =y)
+
+    m, e = compare_models(code, data, init_params, model, transformed_data, n_runs=2, model_cache=model_cache)
+    print(m, e)
+    assert m == 0, "test not successful"
 
 def test3():
     n_samples = 1
@@ -58,7 +161,11 @@ def test3():
     dfile = "../example-models/bugs_examples/vol1/rats/rats.data.R"
     mfile = "../example-models/bugs_examples/vol1/rats/rats_vec.stan"
     pfile = "./test/model_3_autogen.py"
-    test_generic(dfile, mfile, pfile, n_samples, model_cache)
+    m, e = test_generic(dfile, mfile, pfile, n_samples, model_cache)
+    print(m,e)
+    assert m==0, "test not successful"
+
+
 
 from utils import exists_p, load_p, save_p
 import pystan
@@ -275,4 +382,4 @@ def test_all():
     test3()
 
 if __name__ == "__main__":
-    test_all()
+    test5()
