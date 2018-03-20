@@ -1,7 +1,7 @@
 import numpy as np
 from compare_models import compare_models
 from utils import dist, EPSILON, set_seed, to_variable, to_float, dist, get_fns_pyro, \
-    fma, init_real_and_cache, do_pyro_compatibility_hacks, generate_pyro_file, \
+    fma, init_real_and_cache, do_pyro_compatibility_hacks, generate_pyro_file, handle_error, \
     mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func, log_traceback
 import pyro
 import torch
@@ -69,8 +69,7 @@ def cache_model(args):
     idd = "%d - %s" % (i, pfile)
     with open(mfile, "r") as f:
         code = f.read()
-    # TODO: remember to coordinate this with Pyro dist = DIST() object in units.py
-    code = do_pyro_compatibility_hacks(code)
+
     if "increment_log_prob" in code:
         msg = ("T %s: has increment_log_prob" % idd)
         return msg, 2
@@ -101,92 +100,84 @@ def cache_all_models(args):
     p = multiprocessing.Pool(27)
     results = p.map(cache_model, argss)
     for k in range(4):
-        n = len(filter(lambda x: x[1] == k, results))
+        n = len(list(filter(lambda x: x[1] == k, results)))
         print("%d : %d" % (k, n))
 
-def test_generic(dfile, mfile, pfile, n_samples, model_cache):
+def test_generic(dfile, mfile, pfile, n_runs, model_cache):
     try:
         generate_pyro_file(mfile, pfile)
     except AssertionError as e:
-        if "SYNTAX ERROR in Stan Code" in str(e):
-            _, _, etb = sys.exc_info()
-            print(log_traceback(e, etb))
-            return 13
-        raise
+        return handle_error("generate_pyro_file", e)
 
     jfile = "%s.json" % pfile
 
     if not os.path.exists(jfile):
         os.system("Rscript --vanilla convert_data.R %s %s" % (dfile, jfile))
     if not os.path.exists(jfile):
-        print("R data to json conversion failed")
-        return 1
+        return 1, "R data to json conversion failed"
     with open(jfile, "r") as fj:
         file_data = json.load(fj)
+    """
     try:
         b, jd1, jd2 = divide_json_data(file_data)
     except AssertionError as e:
         if "variable values in data.R file are nested dictionaries!" in str(e):
             _, _, etb = sys.exc_info()
-            print(log_traceback(e, etb))
-            return 14
+            return 14, log_traceback(e, etb)
         raise
 
     if not b:
         print("Could not divide json data")
         return 2
     datas = [json_file_to_mem_format(jd1), json_file_to_mem_format(jd2)]
+    """
+    try:
+        data = json_file_to_mem_format(file_data)
+    except AssertionError as e:
+        return handle_error("json_file_to_mem_format", e)
 
     try:
         validate_data_def, init_params, model, transformed_data = get_fns_pyro(pfile)
     except SyntaxError as e:
-        if "invalid syntax" in str(e):
-            _, _, etb = sys.exc_info()
-            print(log_traceback(e, etb))
-            return 3
-        raise
+        return handle_error("import_pyro_code", e)
     #except AttributeError as e: #one of the attributes/functions was not found in pyro code
     #    return 3
 
     try:
-        validate_data_def(json_file_to_mem_format(file_data))
+        validate_data_def(data)
     except (AssertionError, KeyError) as e:
-        print("original data validation failed: %s" % str(e))
-        return 15
-    except:
-        raise
+        return handle_error("validate_data_def", e)
 
-    for data in datas:
+    """for data in datas:
         try:
             validate_data_def(data)
         except (AssertionError, KeyError) as e:
-            print("splitted data validation failed: %s" % str(e))
-            return 16
+            _, _, etb = sys.exc_info()
+            return 16, "splitted data validation failed: %s" % log_traceback(e, etb)
         except:
             raise
+    """
 
-    if model is None:
-        return 3
-    if init_params is None:
-        return 4
+    try:
+        assert model is not None, "model is None"
+        assert init_params is not None, "init_params is None"
+    except AssertionError as e:
+        return handle_error("import_pyro_code", e)
+
     #if transformed_data is None:
     #    return 5
 
     with open(mfile, "r") as f:
         code = f.read()
-    # TODO: remember to coordinate this with Pyro dist = DIST() object in units.py
-    code = do_pyro_compatibility_hacks(code)
-    if "increment_log_prob" in code:
-        return 7
 
-    matched = compare_models(code, datas, init_params, model, transformed_data,
-                   n_samples=n_samples, model_cache=model_cache)
-    if matched == True:
-        return 0
-    elif int(matched) >= 8:
-        return matched
-    else:
-        return 6
+    try:
+        assert  "increment_log_prob" not in code, "increment_log_prob used in Stan code"
+    except AssertionError as e:
+        return handle_error("load_stan_code", e)
+
+    matched, err_s = compare_models(code, data, init_params, model, transformed_data,
+                   n_runs=n_runs, model_cache=model_cache)
+    return matched, err_s
 
 def test2():
     n_samples=1

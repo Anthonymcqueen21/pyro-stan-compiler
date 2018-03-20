@@ -1,5 +1,7 @@
 from utils import load_data, import_by_string, exists_p, load_p, to_float, save_p, log_traceback, \
-    do_pyro_compatibility_hacks, mk_module, tensorize_data, variablize_params, reset_initialization_cache
+    do_pyro_compatibility_hacks, mk_module, tensorize_data, variablize_params, reset_initialization_cache, \
+    handle_error
+
 import pystan
 import sys
 import numpy as np
@@ -128,91 +130,59 @@ def process_2d_sites(svs):
     for k in n_svs:
         svs[k] = n_svs[k]
 
-def compare_models(code, datas, init_params, model, transformed_data, n_samples=1, model_cache=None):
-    reset_initialization_cache()
-    lp_vals = []
-    for data in datas:
-        params ={}
-        copy_data = copy.deepcopy(data)
+def compare_models(code, data, init_params, model, transformed_data, n_runs=2, model_cache=None):
 
-        tensorize_data(data)
-        if transformed_data is not None:
-            try:
-                transformed_data(data)
-            except KeyError:
-                return 8
-            except AssertionError as e:
-                if "Cannot handle function" in str(e):
-                    _, _ , etb = sys.exc_info()
-                    print(log_traceback(e,etb))
-                    return 12
-                raise
-            except:
-                raise
+    copy_data = copy.deepcopy(data)
+    tensorize_data(data)
+    if transformed_data is not None:
+        try:
+            transformed_data(data)
+        except (KeyError, AssertionError) as e:
+            return handle_error("run_transformed_data", e)
+
+
+    lp_vals = []
+    #for data in datas:
+    for i in range(n_runs):
+        reset_initialization_cache()
+        params ={}
         try:
             init_params(data, params)
-        except AssertionError as e:
-            if "Cannot handle function" in str(e):
-                _, _, etb = sys.exc_info()
-                print(log_traceback(e, etb))
-                return 12
-            raise
-        except KeyError as e:
-            _, _, etb = sys.exc_info()
-            print(log_traceback(e, etb))
-            return 9
+        except (KeyError, AssertionError) as e:
+            return handle_error("run_init_params", e)
 
         init_values = {k: params[k].data.cpu().numpy().tolist() for k in params}
         init_values = {k: (init_values[k][0]) if len(init_values[k])==1 else np.array(init_values[k]) for k in init_values}
 
         #print(init_values)
         try:
-            site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples, model_cache)
-        except RuntimeError as e:
-            if "mismatch" in str(e) and "dimension" in str(e) and  "declared and found in context" in str(e):
-                _, _, etb = sys.exc_info()
-                print(log_traceback(e, etb))
-                return 10
-            if "accessing element out of range" in str(e) or "Initialization failed" in str(e):
-                _, _, etb = sys.exc_info()
-                print(log_traceback(e, etb))
-                return 13
-            #print(e)
-            raise
+            site_values, s_log_probs = run_stan(copy_data, code, init_values, n_samples=1, model_cache=model_cache)
+        except (ValueError, RuntimeError) as e:
+            return handle_error("run_stan", e)
 
 
         try:
-            p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples, params)
-        except AssertionError as e:
-            #print(e)
-            if "dist_name=" in str(e) and "is invalid" in str(e):
-                _, _, etb = sys.exc_info()
-                print(log_traceback(e, etb))
-                return 11
-            if "logits allowed in bernoulli, categorical only" in str(e):
-                _, _, etb = sys.exc_info()
-                print(log_traceback(e, etb))
-                return 11
-            if "Cannot handle function" in str(e):
-                _, _, etb = sys.exc_info()
-                print(log_traceback(e, etb))
-                return 12
-            raise
+            p_log_probs, n_log_probs = run_pyro(site_values, data, model, transformed_data, n_samples=1, params=params)
+        except (RuntimeError, NotImplementedError, AssertionError, RuntimeError, NameError) as e:
+            return handle_error("run_pyro", e)
+
         p_avg = (np.mean(p_log_probs))/n_log_probs
         s_avg = (np.mean(s_log_probs))/n_log_probs
         lp_vals.append((p_avg, s_avg))
 
     assert len(lp_vals) >= 2
-    diffs = list(map(lambda x: x[0]-x[1], lp_vals))
-    diff0 = diffs[0]
-    for diff_v in diffs:
+    n_lp = len(lp_vals)
+    for i in range(n_lp):
+        for j in range(i):
+            (p1,s1) = lp_vals[i]
+            (p2,s2) = lp_vals[j]
+            try:
+                assert abs((p1-p2) - (s1-s2)) <= 1e-2, "Log-probs check failed -- Log " \
+                                                       "probs don't match with EPS=1e-2! lp_vals = %s"  % (lp_vals)
+            except AssertionError as e:
+                return handle_error("log_prob_comparison", e)
+    return 0, "success" #""Log probs match"
 
-        if abs(diff_v-diff0) >= 1e-2:
-            print("Log probs don't match with EPS=1e-2! %s // %s" % (lp_vals, diffs))
-            return False
-        #print(abs(diff_v-diff0))
-    print("Log probs match with a constant difference pyro-stan of approx. %0.3f" % diff0)
-    return True
 
 if __name__ == "__main__":
     import argparse

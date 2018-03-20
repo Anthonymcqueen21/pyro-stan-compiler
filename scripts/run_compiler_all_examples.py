@@ -25,7 +25,7 @@ def get_all_data_paths(root, ofldr):
 status_to_issue = {0 : "success",
                    1 : "R data conversion failed",
                    2: "Data division failed",
-                   3: "model is None / Python Syntax Error",
+                   3: "model is None / Python Syntax Error / Def Incorrect Pyro code",
                    4: "init_params is None",
                    5: "transformed_data is None",
                    6: "Log probs failed",
@@ -38,7 +38,9 @@ status_to_issue = {0 : "success",
                    13: "StanRuntimeError accessing element out of range / Initialization failed / Syntax Error in Stan",
                    14: "variable values in data.R file are nested dictionaries!",
                    15: "original data validation failed",
-                   16: "splitted data validation failed"}
+                   16: "splitted data validation failed",
+                   17: "param shaped are probably dependent on data (shape mismatch in cache!)",
+                   18: "Feature not implemented in Stan2Pyro.cpp"}
 
 import pickle
 def get_cached_state(fname):
@@ -64,9 +66,13 @@ if __name__ == "__main__":
 
     if p_args.eid is not None:
         import sys
-        (dfile, mfile, pfile, model_cache) = args[p_args.eid]
-        n_samples = 1
-        this_try = test_generic(dfile, mfile, pfile, n_samples, model_cache)
+
+        for (dfile, mfile, pfile, model_cache) in args:
+            if ("_%s_" % p_args.eid) in pfile:
+                break
+        
+        n_runs = 2
+        this_try = test_generic(dfile, mfile, pfile, n_runs, model_cache)
         print(status_to_issue[this_try])
         print(args[p_args.eid])
         bb()
@@ -81,15 +87,18 @@ if __name__ == "__main__":
         for  k in range(len(status_to_issue)):
             if k not in status:
                 status[k] = []
+
     #cache_all_models(args)
     #bb()
+
     for (dfile,mfile,pfile,model_cache) in args:
-        n_samples =1
-        this_try = test_generic(dfile,mfile,pfile,n_samples,model_cache)
-        if this_try not in [0,1,2, 15, 6, 13]:
-            bb()
-        status[this_try].append((dfile,mfile,pfile,model_cache))
-        print("TTTTTT %d: pyro-file: %s" % (j, pfile))
+        n_runs = 2
+        print("STARTING TO PROCESS %d: pyro-file: %s" % (j, pfile))
+        this_try, err = test_generic(dfile,mfile,pfile,n_runs,model_cache)
+        #if err is not None and "const" in err and "Assertion" in err and "false" in err:
+        #    bb()
+        status[this_try].append((dfile,mfile,pfile,model_cache,err))
+
         for k in status:
             if len(status[k]) > 0:
                 print("[%s]%s : %d" % (k, status_to_issue[k], len(status[k])))
@@ -98,5 +107,5 @@ if __name__ == "__main__":
         j+=1
     for k in status:
         if len(status[k]) > 0:
-            print("%s : %d" %(status_to_issue[k], len(status[k])))
+            print("[%s] %s : %d" %(k, status_to_issue[k], len(status[k])))
     bb()

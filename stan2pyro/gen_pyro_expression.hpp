@@ -17,7 +17,6 @@
 namespace stan {
   namespace lang {
 
-
     void pyro_statement(const statement& s, int indent, std::ostream& o);
 
     std::string safeguard_varname(std::string name);
@@ -54,22 +53,16 @@ namespace stan {
       }
 
       void operator()(const int_literal& n) const {
-          if (!is_index_)
-              o_ << "to_variable(";
           o_ << n.val_;
-          if (!is_index_)
-              o_ << ")";
+
       }
 
       void operator()(const double_literal& x) const {
         std::string num_str = boost::lexical_cast<std::string>(x.val_);
-        if (!is_index_)
-            o_ << "to_variable(";
         o_ << num_str;
         if (num_str.find_first_of("eE.") == std::string::npos)
           o_ << ".0";  // trailing 0 to ensure C++ makes it a double
-        if (!is_index_)
-            o_ << ")";
+
       }
 
       void operator()(const array_expr& x) const {
@@ -122,15 +115,12 @@ namespace stan {
       }
 
       void operator()(int n) const {   // NOLINT
-        o_ << "to_variable(";
         o_ << static_cast<long>(n);    // NOLINT
-        o_ << ")";
+
       }
 
       void operator()(double x) const {
-          o_ << "to_variable(";
           o_ << x;
-          o_ << ")";
       }
 
       void operator()(const std::string& x) const { o_ << x; }  // identifiers
@@ -152,6 +142,7 @@ namespace stan {
       }
 
       void operator()(const index_op_sliced& x) const {
+        assert (false);
         if (x.idxs_.size() == 0) {
           pyro_generate_expression(x.expr_, user_facing_, o_);
           return;
@@ -377,8 +368,11 @@ namespace stan {
     // generate expression when the variable is an index
     void pyro_generate_expression_as_index(const expression& e, bool user_facing,
                              std::ostream& o) {
-      pyro_expression_visgen vis(o, user_facing, true);
+      std::stringstream ss;
+      pyro_expression_visgen vis(ss, user_facing, true);
       boost::apply_visitor(vis, e.expr_);
+      std::string ix_str = ss.str();
+      o << ix_str;
     }
 
     std::string pyro_generate_expression_string(const expression& e, bool user_facing) {
