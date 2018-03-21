@@ -5,7 +5,7 @@ import pickle
 import torch
 import collections
 import numpy as np
-import pyro.distributions as pdist
+import pyro.distributions as dist
 from os.path import join
 import pyro
 import math
@@ -264,16 +264,6 @@ def do_pyro_compatibility_hacks(code):
     code = code.replace("inv_gamma", "normal")
     return code
 
-class DIST(dict):
-    def __getattr__(self, x):
-        try:
-            return getattr(pdist, x)
-        except:
-        #    if x == "Inv_gamma":
-        #        return pdist.Normal
-        #    else:
-            raise
-dist = DIST()
 
 def reset_initialization_cache():
     global cache_init

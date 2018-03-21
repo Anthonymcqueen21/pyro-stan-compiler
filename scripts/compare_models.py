@@ -28,7 +28,7 @@ def run_stan(data, code, init_values, n_samples, model_cache=None):
             params = {v: site_values[v][i] for v in site_values}
         else:
             params = {v: float(site_values[v]) if  site_values[v].shape == () else site_values[v][0] for v in site_values}
-        log_p = fit.log_prob(fit.unconstrain_pars(params), adjust_transform=True)
+        log_p = fit.log_prob(fit.unconstrain_pars(params), adjust_transform=False)
         #lp2 = fit.log_prob(fit.unconstrain_pars(params), adjust_transform=True)
         log_probs.append(log_p)
         #print(log_p, params, fit.unconstrain_pars(params))
@@ -166,8 +166,9 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
         except (RuntimeError, NotImplementedError, AssertionError, RuntimeError, NameError) as e:
             return handle_error("run_pyro", e)
 
-        p_avg = (np.mean(p_log_probs))/n_log_probs
-        s_avg = (np.mean(s_log_probs))/n_log_probs
+
+        p_avg = float(np.mean(p_log_probs))/n_log_probs
+        s_avg = float(np.mean(s_log_probs))/n_log_probs
         lp_vals.append((p_avg, s_avg))
 
     assert len(lp_vals) >= 2
@@ -177,8 +178,13 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
             (p1,s1) = lp_vals[i]
             (p2,s2) = lp_vals[j]
             try:
-                assert abs((p1-p2) - (s1-s2)) <= 1e-2, "Log-probs check failed -- Log " \
-                                                       "probs don't match with EPS=1e-2! lp_vals = %s"  % (lp_vals)
+                perc_error = 100*abs((p1-p2) - (s1-s2))/ abs((p1+p2) + (s1+s2))
+                check_abs = abs((p1-p2) - (s1-s2)) <= 1e-2
+                check_perc = perc_error < 1.
+                assert check_abs, "Log-probs check failed -- " \
+                                  "Log probs don't match with EPS=1e-2! lp_vals = %s"  % (lp_vals) + \
+                                  " p1-p2=%0.5f s1-s2=%0.5f abs((p1-p2) - (s1-s2))=%0.5f" %\
+                                  (p1-p2, s1-s2, abs((p1-p2) - (s1-s2)))
             except AssertionError as e:
                 return handle_error("log_prob_comparison", e)
     return 0, "success" #""Log probs match"

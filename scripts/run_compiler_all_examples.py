@@ -66,13 +66,14 @@ if __name__ == "__main__":
 
     if p_args.eid is not None:
         import sys
-
+        found = False
         for (dfile, mfile, pfile, model_cache) in args:
             if ("_%s_" % p_args.eid) in pfile:
+                found=True
                 break
-        
+        assert found, "id=%d not found" %args.eid
         n_runs = 2
-        this_try = test_generic(dfile, mfile, pfile, n_runs, model_cache)
+        this_try, err_s = test_generic(dfile, mfile, pfile, n_runs, model_cache)
         print(status_to_issue[this_try])
         print(args[p_args.eid])
         bb()
