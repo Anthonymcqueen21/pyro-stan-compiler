@@ -89,7 +89,7 @@ if __name__ == "__main__":
             if k not in status:
                 status[k] = []
 
-    #cache_all_models(args)
+    cache_all_models(args)
     #bb()
 
     for (dfile,mfile,pfile,model_cache) in args:

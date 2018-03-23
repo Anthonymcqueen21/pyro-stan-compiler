@@ -46,6 +46,7 @@ def _call_func(fname, args):
     if len(args) == 3:
         [x, y, z] = args
         if fname == "fma":
+            # FIXME: tensor support
             return x*y+z
 
     if len(args) == 1:
@@ -77,10 +78,9 @@ def _call_func(fname, args):
         if fname == "sd":
             kwargs["unbiased"] = False
 
-
     try:
         args = list(map(lambda x: to_variable(x), args))
-        return getattr(torch,fname)(*args, **kwargs)
+        return getattr(torch, fname)(*args, **kwargs)
     except:
         assert False, "Cannot handle function=%s(%s,%s)" % (fname,args,kwargs)
 

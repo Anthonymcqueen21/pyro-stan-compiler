@@ -12,3 +12,4 @@ __pycache__
 .project
 .settings/
 test_compiler
+.Rhistory

@@ -364,7 +364,7 @@ namespace stan {
         bool is_num = is_a_number(lhs.c_str(), n);
         if (!is_num) {
             // conversion failed because the input wasn't a number
-            o_ <<lhs << " = ";
+            o_ << lhs << " = ";
         }
         else {
             // TODO: use this as observed value -- hack: output a temp variable with this const as its value
@@ -374,6 +374,7 @@ namespace stan {
         }
 
 
+        // Generate names of samples
         if ( const index_op* ix_op = boost::get<index_op>( &(x.expr_.expr_) ) ){
             // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
             std::stringstream expr_o;
@@ -398,16 +399,23 @@ namespace stan {
             }
             lhs = expr_string;
         }
-        else lhs = "\"" + lhs + "\"";
+        else {
+            if (lhs.find("\"") != std::string::npos) lhs = "\"" + lhs.substr(lhs.find_last_of("\"") + 3) + "\"";
+            else lhs = "\"" + lhs + "\"";
+        }
 
         o_ << " _pyro_sample(";
         //o_ << "lp_accum__.add(" << prob_fun << "<propto__>(";
+        // LHS of assignment
         pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         o_ << ", ";
-        o_<<lhs;
+        // name of sample
+        o_ << lhs;
         //pyro_generate_expression(x.expr_, NOT_USER_FACING, o_);
         o_<<", \"";
+        // name of distribution
         std::string dist = x.dist_.family_;
+        // args of distribution
         o_<<dist<<"\", [";
         for (size_t i = 0; i < x.dist_.args_.size(); ++i) {;
           if (i != 0) o_ << ", ";
