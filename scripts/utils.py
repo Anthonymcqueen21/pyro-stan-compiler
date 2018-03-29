@@ -12,7 +12,8 @@ import math
 import sys
 import subprocess
 from six import string_types
-from pdb import set_trace as bb
+import traceback
+
 
 def _index_select(arr, ix):
     if isinstance(ix, int):
@@ -26,8 +27,6 @@ def _index_select(arr, ix):
             return torch.index_select(arr, 0, ix)
     else:
         assert False, "invalid index selection"
-
-import traceback
 
 def log_traceback(ex, ex_traceback=None):
     if ex_traceback is None:
@@ -120,8 +119,6 @@ def sanitize_module_loading_file(pfile):
     return pfile
 
 def generate_pyro_file(mfile, pfile):
-
-
     process = subprocess.Popen('../stan2pyro/bin/stan2pyro %s' % mfile, shell=True,
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr =subprocess.PIPE, close_fds=True)
@@ -240,7 +237,6 @@ def set_seed(seed, use_cuda):
         if use_cuda:
             torch.cuda.manual_seed(seed)
 
-
 def mk_module(mod, path="."):
     if isinstance(mod, str):
         mods = mod.split(".")
@@ -264,7 +260,6 @@ def do_pyro_compatibility_hacks(code):
     code = code.replace("inv_gamma", "normal")
     return code
 
-
 def reset_initialization_cache():
     global cache_init
     cache_init = {}
@@ -277,7 +272,6 @@ def init_matrix_and_cache(name,  low=None, high=None, dims=None):
 def init_vector_and_cache(name,  low=None, high=None, dims=None):
     assert dims is not None, "dims cannot be empty for a vector"
     return init_real_and_cache(name, low=low, high=high, dims=dims)
-
 
 def init_matrix(name,  low=None, high=None, dims=None):
     assert dims is not None, "dims cannot be empty for a vector"
@@ -293,7 +287,7 @@ def init_real(name, low=None, high=None, dims=(1)):
     if low is None:
         low = -2.
         if high is not None and low >= high:
-            low = high -1.
+            low = high - 1.
     if high is None:
         high = 2.
         if low >= high:
@@ -358,7 +352,6 @@ def check_constraints(v, low=None, high=None, dims=None):
     else:
         assert False, "invalid data type for v=%s" % v
 
-
 def import_by_string(full_name):
     #try:
     module_name, unit_name = full_name.rsplit('.', 1)
@@ -377,8 +370,6 @@ def load_p(fname):
 
 def exists_p(fname):
     return os.path.exists(fname)
-
-
 
 def mkdir_p(path):
     try:
@@ -451,7 +442,6 @@ def load_data(fname):
     with open(fname,"r") as f:
         rdata = json.load(f)
     return json_file_to_mem_format(rdata)
-
 
 def handle_error(stage, e, etb=None):
     trace_v = log_traceback(e,etb)
