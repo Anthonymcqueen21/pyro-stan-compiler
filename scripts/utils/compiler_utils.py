@@ -4,7 +4,10 @@ import numpy as np
 from os.path import join
 import subprocess
 from six import string_types
-from logger import log_traceback
+from .logger import log_traceback
+
+
+EPSILON = 1e-7
 
 
 def sanitize_module_loading_file(pfile):

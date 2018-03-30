@@ -5,7 +5,7 @@ import collections
 import math
 import numpy as np
 import pyro.distributions as dist
-from logger_utils import traceback
+from .logger import log_traceback
 
 
 cache_init = {}
