@@ -181,7 +181,7 @@ def compare_models(code, data, init_params, model, transformed_data, n_runs=2, m
                 perc_error = 100*abs((p1-p2) - (s1-s2))/ abs((p1+p2) + (s1+s2))
                 check_abs = abs((p1-p2) - (s1-s2)) <= 1e-2
                 check_perc = perc_error < 1.
-                assert check_abs, "Log-probs check failed -- " \
+                assert check_perc, "Log-probs check failed -- " \
                                   "Log probs don't match with EPS=1e-2! lp_vals = %s"  % (lp_vals) + \
                                   " p1-p2=%0.5f s1-s2=%0.5f abs((p1-p2) - (s1-s2))=%0.5f" %\
                                   (p1-p2, s1-s2, abs((p1-p2) - (s1-s2)))

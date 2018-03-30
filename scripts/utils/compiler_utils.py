@@ -154,6 +154,8 @@ def handle_error(stage, e, etb=None):
         if (isinstance(e, SyntaxError) and "invalid syntax" in str(e)) or \
                 (isinstance(e, AssertionError) and "model is None" in str(e)):
             err_id = 3
+        elif isinstance(e, SyntaxError) and "can't assign to function call" in str(e):
+            err_id = 3
         elif isinstance(e, AssertionError) and "init_params is None" in str(e):
             err_id = 4
     elif stage == "validate_data_def":
