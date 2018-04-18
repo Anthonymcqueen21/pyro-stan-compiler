@@ -5,7 +5,7 @@ from os.path import join
 import subprocess
 from six import string_types
 from .logger import log_traceback
-
+import torch
 
 EPSILON = 1e-7
 
@@ -126,10 +126,10 @@ def variablize_params(params):
 
 def to_variable(x, requires_grad=False):
     if isinstance(x, collections.Iterable):
-        return torch.tensor(x, requires_grad=requires_grad)
+        return torch.tensor(x, requires_grad=requires_grad).float()
     elif isinstance(x, torch.Tensor):
         return x
-    return torch.tensor([x], requires_grad=requires_grad)
+    return torch.tensor([x], requires_grad=requires_grad).float()
 
 
 def handle_error(stage, e, etb=None):

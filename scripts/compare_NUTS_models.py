@@ -1,16 +1,23 @@
-from utils import load_data, import_by_string, exists_p, load_p, save_p
+
+from utils import  EPSILON, set_seed, to_variable, to_float, get_fns_pyro, tensorize_data, \
+    fma, init_real, do_pyro_compatibility_hacks, generate_pyro_file, handle_error, \
+    mkdir_p, load_data, json_file_to_mem_format, _pyro_sample, _call_func, log_traceback, \
+    init_vector, init_matrix, to_int, _pyro_assign, _index_select, import_by_string, exists_p, load_p, save_p
 import pystan
 import numpy as np
 import pyro.poutine as poutine
 from pdb import set_trace as bb
 import pyro
 import torch
+import json
+import os.path
 import pyro.distributions as dist
 from pyro.infer.mcmc.nuts import NUTS
 from pyro.infer.mcmc.mcmc import MCMC
+from run_compiler_all_examples import get_all_data_paths, get_cached_state
 #TODO: init_values is a dictionary mapping variable name to values/floats
 
-def run_stan(data, sfile, init_values, n_samples, model_cache=None):
+def run_stan_nuts(data, sfile, n_samples=2000, model_cache=None):
     if model_cache is not None and exists_p(model_cache):
         sm = load_p(model_cache)
     else:
@@ -19,14 +26,14 @@ def run_stan(data, sfile, init_values, n_samples, model_cache=None):
         sm = pystan.StanModel(model_code=code)
         if model_cache is not None:
             save_p(sm, model_cache)
-    fit = sm.sampling(data=data,iter=n_samples,chains=1,algorithm="NUTS")
+    fit = sm.sampling(data=data,iter=n_samples,algorithm="NUTS")
     print(fit)
 
     site_values=fit.extract(permuted=True)
-    bb()
-    return {k: np.mean(site_values[k]) for k in site_values.keys()}
+    site_keys = site_values.keys()
+    return {k: np.mean(site_values[k], axis=0) for k in site_keys}
 
-def run_pyro(data, pfile, n_samples, params):
+def run_pyro_nuts(data, pfile, n_samples, params):
 
     # import model, transformed_data functions (if exists) from pyro module
 
@@ -53,30 +60,49 @@ def run_pyro(data, pfile, n_samples, params):
     return posterior_means
 
 
-def compare_models(dfile, sfile, pfile, n_samples=1000, model_cache=None):
-    data = load_data(dfile)
+def run_pyro_advi(data, validate_data_def, initialized_params, model):
+    raise NotImplementedError("run_pyro_advi: Implement this JP")
 
-    params ={}
-    import_by_string(pfile + ".init_params")(params)
-    print(params)
-    s_site_means = run_stan(data,sfile, params, n_samples, model_cache)
-    p_site_means = run_pyro(data, pfile, n_samples, params)
+def compare_models(data, sfile, pfile, n_samples=2000, model_cache=None):
+    validate_data_def, init_params, model, transformed_data = get_fns_pyro(pfile)
+
+    s_site_means = run_stan_nuts(data, sfile, n_samples=n_samples, model_cache=model_cache)
+    # breakpoint
+    initialized_params = {}
+    tensorize_data(data)
+    transformed_data(data)
+    init_params(data, initialized_params)
+    p_site_means = run_pyro_advi(data, validate_data_def, initialized_params, model)
+
+    #TODO: check that these means are close to each other for each parameter
+
     bb()
 
-"""
-python -m pdb compare_NUTS_models.py -d ./test/p1/c_p1.json -s ./test/p1/p1.stan -p test.p1.p1 -mc ./test/p1/p1.pkl
-"""
+
+def use_log_prob_tested_models(ofldr):
+    cfname = "%s/status.pkl" % ofldr
+    (j, status) = get_cached_state(cfname)
+    successful_models = status[0]
+    # args = list(sorted(get_all_data_paths(p_args.examples_folder,ofldr)))
+    print("%d =total possible (R data, stan model) pairs that pass log-prob test" % len(successful_models))
+
+    for (dfile, mfile, pfile, model_cache, err) in (successful_models):
+        if os.path.exists(pfile):
+            jfile = "%s.json" % pfile
+            assert os.path.exists(jfile)
+            with open(jfile, "r") as fj:
+                file_data = json.load(fj)
+            data = json_file_to_mem_format(file_data)
+            print("STARTING TO PROCESS stan-file: %s pyro-file: %s" % (mfile, pfile))
+            compare_models(data, mfile, pfile, model_cache=model_cache, n_samples=2000)
+
 
 if __name__ == "__main__":
     import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-o', '--output-folder', default='./test_compiler', type=str,
+                        help="Output folder from run_compiler_all_examples.py, should have a status.pkl file in it")
+    p_args = parser.parse_args()
+    use_log_prob_tested_models(p_args.output_folder)
 
-    parser = argparse.ArgumentParser(description="Compare Stan and Pyro models!")
-    parser.add_argument('-d', '--data-file', required=True, type=str, help="JSON data file(s)")
-    parser.add_argument('-s', '--stan-model-file', required=True, type=str, help="stan model file")
-    parser.add_argument('-p', '--pyro-model-file', required=True, type=str, help="Pyro model import path e.g. test.p1")
-    parser.add_argument('-mc', '--model-cache', default=None, type=str, help="Stan model cache file")
-    parser.add_argument('-ns', '--num-samples', default=1000, type=int, help="number of samples / iterations for HMC")
 
-    args = parser.parse_args()
-    compare_models(args.data_file, args.stan_model_file,
-                   args.pyro_model_file, model_cache=args.model_cache, n_samples=args.num_samples)

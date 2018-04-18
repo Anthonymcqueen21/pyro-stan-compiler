@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pyro.distributions as dist
 from .logger import log_traceback
-
+from .compiler_utils import to_variable
 
 cache_init = {}
 
@@ -51,6 +51,7 @@ def _call_func(fname, args):
         "fmin" : "min",
         "fmax" : "max",
         "multiply" : "mul",
+        "mul" : "mul",
         "elt_multiply" : "mul",
         "subtract" : "sub",
         "fabs" : "abs",
@@ -68,8 +69,9 @@ def _call_func(fname, args):
     try:
         args = list(map(lambda x: to_variable(x), args))
         return getattr(torch, fname)(*args, **kwargs)
-    except:
-        assert False, "Cannot handle function=%s(%s,%s)" % (fname,args,kwargs)
+    except Exception as e:
+        print(e)
+        assert False, "Cannot handle function=%s(%s,%s)" % (fname,len(args),len(kwargs))
 
 
 def identity(x):

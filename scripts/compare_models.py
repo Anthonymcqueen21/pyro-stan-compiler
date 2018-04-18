@@ -10,6 +10,7 @@ from pdb import set_trace as bb
 import copy
 #TODO: init_values is a dictionary mapping variable name to values/floats
 
+
 def run_stan(data, code, init_values, n_samples, model_cache=None):
     if model_cache is not None and exists_p(model_cache):
         sm = load_p(model_cache)
@@ -52,8 +53,6 @@ def run_pyro(site_values, data, model, transformed_data, n_samples, params):
 
     assert model is not None, "model couldn't be imported"
 
-
-
     variablize_params(params)
 
     log_pdfs = []
@@ -85,7 +84,7 @@ def run_pyro(site_values, data, model, transformed_data, n_samples, params):
 def process_files(pfile, dfiles, sfile):
     with open(sfile, "r") as f:
         code = f.read()
-    code = do_pyro_compatibility_hacks(code)
+    # code = do_pyro_compatibility_hacks(code)
 
     def sanitize_module_loading_file(pfile):
         if pfile.endswith(".py"):
@@ -203,5 +202,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     code, datas, init_params, model, transformed_data = \
         process_files(args.pyro_model_file,args.data_files, args.stan_model_file)
-    compare_models(code, datas, init_params, model, transformed_data ,
-                   n_samples=args.n_samples, model_cache=args.model_cache)
+    compare_models(code, datas, init_params, model, transformed_data,
+                   n_runs=args.n_samples, model_cache=args.model_cache)
