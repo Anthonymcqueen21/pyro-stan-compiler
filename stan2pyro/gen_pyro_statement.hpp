@@ -4,7 +4,9 @@
 #include <stan/lang/generator/generate_indent.hpp>
 #include <boost/variant/apply_visitor.hpp>
 #include <ostream>
+#include <algorithm>
 
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -19,6 +21,10 @@
 namespace stan {
   namespace lang {
 
+    std::string escape_chars(std::string s){
+        std::replace( s.begin(), s.end(), '"', ' ');
+        return s;
+    }
     void generate_var_init_python(var_decl v, int indent, std::ostream& o);
 
     std::string safeguard_varname(std::string name);
@@ -33,7 +39,8 @@ namespace stan {
     void generate_statement(const std::vector<statement>& ss, int indent,
                             std::ostream& o);
 
-    void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o);
+    void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o,
+                        std::set<std::string> *indices);
 
     template <bool isLHS>
     void generate_pyro_indexed_expr(const std::string& expr,
@@ -130,6 +137,8 @@ namespace stan {
 
       program p_;
 
+      std::set<std::string> *for_indices;
+
       /**
        * Construct a visitor for generating statements at the
        * specified indent level to the specified stream.
@@ -137,8 +146,8 @@ namespace stan {
        * @param[in] indent indentation level
        * @param[in,out] o stream for generating
        */
-      pyro_statement_visgen(size_t indent, std::ostream& o, const program& p)
-        : visgen(o), indent_(indent) , p_(p) { }
+      pyro_statement_visgen(size_t indent, std::ostream& o, const program& p, std::set<std::string> *_for_indices)
+        : visgen(o), indent_(indent) , p_(p), for_indices(_for_indices) { }
 
       /**
        * Generate the target log density increments for truncating a
@@ -379,7 +388,7 @@ namespace stan {
             // source:  http://www.boost.org/doc/libs/1_55_0/doc/html/variant/tutorial.html
             std::stringstream expr_o;
             pyro_generate_expression(ix_op->expr_, NOT_USER_FACING, expr_o);
-            std::string expr_string = "\"" + expr_o.str();
+            std::string expr_string =  expr_o.str();
 
 
             std::vector<std::string> indexes;
@@ -391,7 +400,7 @@ namespace stan {
                 expr_string = expr_string + "[%d]";
               }
             }
-            expr_string = expr_string + "\" % (";
+            expr_string = "\"" + escape_chars(expr_string) + "\" % (";
             for (int ii=0; ii< indexes.size(); ii++){
                 expr_string = expr_string + "to_int(" + indexes[ii] + "-1)";
                 if(ii < indexes.size() - 1) expr_string = expr_string + ",";
@@ -400,8 +409,9 @@ namespace stan {
             lhs = expr_string;
         }
         else {
-            if (lhs.find("\"") != std::string::npos) lhs = "\"" + lhs.substr(lhs.find_last_of("\"") + 3) + "\"";
-            else lhs = "\"" + lhs + "\"";
+            //if (lhs.find("\"") != std::string::npos) lhs = "\"" + lhs.substr(lhs.find_last_of("\"") + 3) + "\"";
+            //else
+            lhs = "\"" + escape_chars(lhs) + "\"";
         }
 
         o_ << " _pyro_sample(";
@@ -429,9 +439,28 @@ namespace stan {
 
       void operator()(const increment_log_prob_statement& x) const {
         generate_indent(indent_, o_);
-        o_ << "lp_accum__.add(";
-        pyro_generate_expression(x.log_prob_, NOT_USER_FACING, o_);
-        o_ << ");" << EOL;
+        std::string s = pyro_generate_expression_string(x.log_prob_, NOT_USER_FACING);
+
+        o_ << "pyro.sample(";
+        std::string name = s;
+        if (for_indices->size() > 0){
+            std::string format = "% (";
+            std::set<std::string>::iterator it;
+            for (it = for_indices->begin(); it != for_indices->end(); ++it) {
+                std::string curr_ix = *it;
+                name = name + "[%d]";
+                if (it != for_indices->begin()){
+                    format = format + ", ";
+                }
+                format = format + curr_ix;
+            }
+            format = format + ")";
+            name = "\"" + escape_chars(name) + "\" " + format;
+        }
+        else name = "\"" + escape_chars(name) + "\"";
+        o_ <<name;
+        o_ <<", dist.Bernoulli("<<s;
+        o_ << ")" << ", obs=(1));" << EOL;
       }
 
       void operator()(const statements& x) const {
@@ -446,7 +475,7 @@ namespace stan {
         }
         o_ << EOL;
         for (size_t i = 0; i < x.statements_.size(); ++i) {
-          pyro_statement(x.statements_[i], p_, indent_, o_);
+          pyro_statement(x.statements_[i], p_, indent_, o_, for_indices);
         }
         if (has_local_vars) {
           generate_indent(indent_, o_);
@@ -496,6 +525,8 @@ namespace stan {
 
 
       void operator()(const for_statement& x) const {
+        for_indices->insert(x.variable_);
+        // o_<<"# Inserting index "<<x.variable_<<" to for_indices, size="<< for_indices->size()<<"\n";
         generate_indent(indent_, o_);
         o_ << "for " << x.variable_ << " in ";
         o_ << "range(";
@@ -510,7 +541,10 @@ namespace stan {
         std::string h_str = ss_h.str();
         if (!is_an_int(h_str)) h_str = "to_int(" + h_str + ")";
         o_ << h_str << " + 1):" << EOL;
-        pyro_statement(x.statement_, p_, indent_ + 1, o_);
+        pyro_statement(x.statement_, p_, indent_ + 1, o_, for_indices);
+        for_indices->erase(x.variable_);
+        // o_<<"# Erasing index "<<x.variable_<<" from for_indices"<<for_indices->size()<<"\n";;
+
       }
 
       // TODO by example
@@ -520,7 +554,7 @@ namespace stan {
         pyro_generate_expression(x.expression_, NOT_USER_FACING, o_);
         o_ << ") {" << EOL;
         generate_void_statement(x.variable_, indent_ + 1, o_);
-        pyro_statement(x.statement_, p_, indent_ + 1, o_);
+        pyro_statement(x.statement_, p_, indent_ + 1, o_, for_indices);
         generate_indent(indent_, o_);
         o_ << "}" << EOL;
       }
@@ -538,7 +572,7 @@ namespace stan {
         o_ << "auto& " << x.variable_ << " = *(";
         o_ << x.variable_ << "__loopid);"  << EOL;
         generate_void_statement(x.variable_, indent_ + 1, o_);
-        pyro_statement(x.statement_, p_, indent_ + 1, o_);
+        pyro_statement(x.statement_, p_, indent_ + 1, o_, for_indices);
         generate_indent(indent_, o_);
         o_ << "}" << EOL;
       }
@@ -567,13 +601,13 @@ namespace stan {
           o_ << "if (as_bool(";
           pyro_generate_expression(x.conditions_[i], NOT_USER_FACING, o_);
           o_ << ")):" << EOL;
-          pyro_statement(x.bodies_[i], p_, indent_ + 1, o_);
+          pyro_statement(x.bodies_[i], p_, indent_ + 1, o_, for_indices);
           generate_indent(indent_, o_);
           //o_ << '}';
         }
         if (x.bodies_.size() > x.conditions_.size()) {
           o_ << "else: " << EOL;
-          pyro_statement(x.bodies_[x.bodies_.size()-1], p_, indent_ + 1, o_);
+          pyro_statement(x.bodies_[x.bodies_.size()-1], p_, indent_ + 1, o_, for_indices);
           generate_indent(indent_, o_);
           //o_ << '}';
         }
@@ -583,7 +617,8 @@ namespace stan {
       void operator()(const no_op_statement& /*x*/) const { }
     };
 
-    void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o) {
+    void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o,
+                        std::set<std::string> *indices) {
 
       if(false){
           is_numbered_statement_vis vis_is_numbered;
@@ -593,7 +628,7 @@ namespace stan {
           }
       }
       //std::cout<<"PYRO_STMT "<<s.begin_line_<<":"<<s.end_line_<<std::endl;
-      pyro_statement_visgen vis(indent, o, p);
+      pyro_statement_visgen vis(indent, o, p, indices);
       boost::apply_visitor(vis, s.statement_);
     }
 

@@ -212,7 +212,14 @@ namespace stan {
       }
 
       void operator()(const simplex_var_decl& x) const {
-        assert (false);
+        int n_dims = x.dims_.size();
+        o_<<"init_simplex";
+        if (use_cache_) o_<<"_and_cache";
+        o_<<"(\""<< var_name_ <<"\"";
+        std::string str_dims = get_dims(x.dims_);
+        if (str_dims != "") o_<<", dims=("<<str_dims <<")";
+        o_ << ") # real/double";
+        o_<<std::endl;
       }
 
       void operator()(const ordered_var_decl& x) const {
@@ -327,7 +334,11 @@ namespace stan {
       }
 
       void operator()(const simplex_var_decl& x) const {
-        assert (false);
+        o_ <<"check_constraints(" <<var_name_;
+        std::string str_dims = get_dims(x.dims_);
+        if (str_dims != "") o_<<", dims=["<<str_dims <<"]";
+        else o_ <<", dims=[1]";
+        o_<<")"<<std::endl;
       }
 
       void operator()(const ordered_var_decl& x) const {
@@ -411,7 +422,8 @@ namespace stan {
     }
 
 
-    void generate_transformed_params_computation(const program &p, int indent, std::ostream& o){
+    void generate_transformed_params_computation(const program &p, int indent, std::ostream& o,
+                                                 std::set<std::string> *ptr_indices){
         int n_td = p.derived_decl_.first.size();
         int n_td_s = p.derived_decl_.second.size();
         // assert(n_td == n_td_s);
@@ -423,7 +435,7 @@ namespace stan {
         }
         for (int i=0;i < n_td_s; i++){
             //o << "# t-params i=" << i <<EOL;
-            pyro_statement(p.derived_decl_.second[i], p, indent, o);
+            pyro_statement(p.derived_decl_.second[i], p, indent, o, ptr_indices);
         }
     }
 
@@ -461,6 +473,7 @@ namespace stan {
 
 //TODO: write a visitor struct for statement_ similar to statement_visgen.hpp in /stan/lang/generator/
 void printer(const stan::lang::program &p) {
+    std::set<std::string> indices; // to maintain for loop indices as they arrive in the AST
 
     std::cout<<"def validate_data_def(data):"<<std::endl;
     int n_d = p.data_decl_.size();
@@ -494,7 +507,7 @@ void printer(const stan::lang::program &p) {
         }
 
         for(int j=0; j<n_td_s; j++){
-            stan::lang::pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout);
+            stan::lang::pyro_statement(p.derived_data_decl_.second[j], p, 1, std::cout, &indices);
         }
         for(int j=0; j<n_td; j++){
             std::string var_name = stan::lang::safeguard_varname(p.derived_data_decl_.first[j].name());
@@ -527,11 +540,12 @@ void printer(const stan::lang::program &p) {
         std::cout << stan::lang::safeguard_varname(p.parameter_decl_[i].name()) <<  " = params[\"";
         std::cout << stan::lang::safeguard_varname(p.parameter_decl_[i].name()) << "\"]\n";
     }
-    stan::lang::generate_transformed_params_computation(p, 1, std::cout);
+    stan::lang::generate_transformed_params_computation(p, 1, std::cout, &indices);
 
     stan::lang::generate_indent(1, std::cout);
     std::cout<<"# MODEL block"<<std::endl;
-    stan::lang::pyro_statement(p.statement_, p, 1, std::cout);
+
+    stan::lang::pyro_statement(p.statement_, p, 1, std::cout, &indices);
 }
 
 int main(int argc, char *argv[]) {

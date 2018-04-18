@@ -17,7 +17,8 @@
 namespace stan {
   namespace lang {
 
-    void pyro_statement(const statement& s, int indent, std::ostream& o);
+    //void pyro_statement(const statement& s, const program &p, int indent, std::ostream& o,
+    //                std::set<std::string> *indices);
 
     std::string safeguard_varname(std::string name);
 
